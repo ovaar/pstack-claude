@@ -333,6 +333,10 @@ describe("slashCommands", () => {
     expect(() => slashCommands("# R\n\nno table\n", ["a"])).toThrow("table header not found");
   });
 
+  test("rejects a command listed twice", () => {
+    expect(() => slashCommands(reference(["| `/a` | x |", "| `/a` | y |"]), ["a"])).toThrow("table repeats a command");
+  });
+
   test("the live reference names exactly the public skills, poteto-mode first", () => {
     const text = readFileSync(join(repoRoot, "docs/reference.md"), "utf8");
     const rows = slashCommands(text, publicSkills(join(repoRoot, "plugins/pstack/skills")));
@@ -602,6 +606,28 @@ describe("plan, changes, apply", () => {
     expect(plan(root)).toEqual(first);
     expect(first.files[PLANNED]).toBe(current);
     expect(Object.hasOwn(first.files, STRAY)).toBe(false);
+    expect(snapshot(root)).toEqual(before);
+  });
+
+  test("a VERSION that is not MAJOR.MINOR.PATCH fails the plan naming it", () => {
+    const root = scratch("pstack-version-");
+    writeFileSync(join(root, "VERSION"), "1.2\n");
+    expect(() => plan(root)).toThrow('VERSION must be MAJOR.MINOR.PATCH, got "1.2"');
+  });
+
+  test("a lead-line file with no heading fails the plan naming the file", () => {
+    const root = repoCopy();
+    const file = "plugins/pstack/skills/teach/SKILL.md";
+    writeFileSync(join(root, file), "---\nname: teach\ndescription: d\n---\n\nno heading here\n");
+    expect(() => plan(root)).toThrow(`${file}: no heading to stamp its lead line under`);
+  });
+
+  test("an argument other than --check exits 1 with the usage and writes nothing", () => {
+    const root = repoCopy();
+    const before = snapshot(root);
+    const run = spawnSync(process.execPath, [join(root, "tools/generate.mjs"), "--chek"], { encoding: "utf8" });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("FAIL: usage: bun tools/generate.mjs [--check]");
     expect(snapshot(root)).toEqual(before);
   });
 
