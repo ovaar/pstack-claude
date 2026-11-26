@@ -100,6 +100,18 @@ describe("validateMuseManifest", () => {
     expect(() => validateMuseManifest(ok, { claude, pathExists: noModels })).toThrow("reads models.json, which is not in the plugin");
   });
 
+  test("rejects an empty skills list, a repeated id, and a manifest without poteto-mode", () => {
+    const empty = structuredClone(ok);
+    empty.capabilities.skills = [];
+    expect(() => validateMuseManifest(empty, { claude, pathExists })).toThrow("capabilities.skills is empty");
+    const repeat = structuredClone(ok);
+    repeat.capabilities.skills.push(repeat.capabilities.skills[0]);
+    expect(() => validateMuseManifest(repeat, { claude, pathExists })).toThrow('capabilities.skills repeats "poteto-mode"');
+    const other = structuredClone(ok);
+    other.capabilities.skills[0].id = "other";
+    expect(() => validateMuseManifest(other, { claude, pathExists })).toThrow('capabilities.skills has no "poteto-mode"');
+  });
+
   test("rejects a command whose id duplicates a skill id", () => {
     const dup = structuredClone(ok);
     dup.capabilities.commands = [{ id: "poteto-mode", path: "skills/poteto-mode/SKILL.md" }];
