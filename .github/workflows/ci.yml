@@ -393,6 +393,22 @@ jobs:
           find . -path ./.git -prune -o -path '*/node_modules' -prune -o -name '*.sh' -print |
             sed 's#^\./##' | sort | tee /dev/stderr | xargs shellcheck --severity=warning
 
+  minimax-smoke:
+    name: MiniMax Code loads the plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The script exits 0 with a skip line when npm is missing, so a passing
+      # step alone would not show that MiniMax Code read the plugin.
+      - name: Install MiniMax Code and list the plugin
+        run: |
+          set -o pipefail
+          tests/minimax-smoke.sh | tee "$RUNNER_TEMP/minimax-smoke.txt"
+          grep -q ' checks passed$' "$RUNNER_TEMP/minimax-smoke.txt"
+
   actionlint:
     name: Workflow lint
     runs-on: ubuntu-latest
