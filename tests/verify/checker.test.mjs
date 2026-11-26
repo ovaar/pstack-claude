@@ -101,7 +101,7 @@ describe("one doctored trace per assertion", () => {
     expect(said(judged, "S2.context.stage-hash")).toMatch(/^saw stage hash [0-9a-f]{64}, want the stage hash setup recorded, [0-9a-f]{64}$/);
   });
 
-  test("a file mode changed in the stage moves the stage hash too", async () => {
+  test.skipIf(process.platform === "win32")("a file mode changed in the stage moves the stage hash too", async () => {
     const judged = await check(evidence({ moved: (stage) => chmodSync(join(stage, MANDATE), 0o755) }));
     expect(failed(judged)).toEqual(["S2.context.stage-hash", "S3.startup.stage-hash"]);
   });
