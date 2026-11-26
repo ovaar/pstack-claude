@@ -6,8 +6,10 @@ import { readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { PLUGIN } from "../plugin.mjs";
+
 // What a Claude Code user loads. Only these paths are copied into the stage.
-export const PRODUCT = ["plugins/pstack", ".claude-plugin", "VERSION"];
+export const PRODUCT = [PLUGIN, ".claude-plugin", "VERSION"];
 // What decides a verdict. A change here changes what PASS means.
 export const JUDGE = [
   "tools/verify.mjs",
@@ -20,8 +22,6 @@ export const JUDGE = [
 // What tells an agent to run the loop.
 export const STEERING = [".claude/skills/verify", ".agents/playbooks"];
 export const WATCHED = [...PRODUCT, ...JUDGE, ...STEERING];
-
-export const PLUGIN_IN_STAGE = "plugins/pstack";
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const FLOWS_DIR = join(here, "flows");

@@ -1,4 +1,3 @@
-#!/usr/bin/env bun
 // Turns a trace from a real run into a fixture fit for a public repository.
 //
 //   bun tests/verify/scrub.mjs <run-directory> <check>/<run> <fixture-name>

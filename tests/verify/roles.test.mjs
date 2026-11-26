@@ -40,7 +40,8 @@ test("only setup and the driver can start a process", () => {
 });
 
 test("the checker reaches neither of them through its imports", () => {
-  expect([...reach("check.mjs")].sort()).toEqual(["check.mjs", "paths.mjs", "stage.mjs", "trace.mjs"]);
+  expect([...reach("check.mjs")].sort()).toEqual(["../plugin.mjs", "check.mjs", "paths.mjs", "stage.mjs", "trace.mjs"]);
+  expect(startsProcesses(read("../plugin.mjs"))).toBe(false);
 });
 
 test("the driver imports no check, no checker and no trace reader", () => {

@@ -26,11 +26,11 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { isMain } from "./plugin.mjs";
+import { isMain, PLUGIN } from "./plugin.mjs";
 import { check, TIERS } from "./verify/check.mjs";
 import { drive } from "./verify/drive.mjs";
 import { nextRound, prune, recordRound, writeEvidence } from "./verify/evidence.mjs";
-import { CHECKS_DIR, FLOWS_DIR, loadDir, PLUGIN_IN_STAGE } from "./verify/paths.mjs";
+import { CHECKS_DIR, FLOWS_DIR, loadDir } from "./verify/paths.mjs";
 import { buildStage, discardSandboxes, doctor, evidenceRoot, plan, sandbox, sandboxRoot, snapshot } from "./verify/setup.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -97,7 +97,7 @@ async function verify(options) {
   writeFileSync(join(dir, "setup.json"), `${JSON.stringify(setup, null, 2)}\n`);
 
   if (!cli.problem) {
-    await drive(plan(selected, base), { cli: cli.path, plugin: join(stage, PLUGIN_IN_STAGE), out: join(dir, "traces"), jobs: options.jobs });
+    await drive(plan(selected, base), { cli: cli.path, plugin: join(stage, PLUGIN), out: join(dir, "traces"), jobs: options.jobs });
   }
   discardSandboxes(base);
 

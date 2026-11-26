@@ -9,7 +9,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { CHECKS_DIR, loadDir, PLUGIN_IN_STAGE } from "./paths.mjs";
+import { PLUGIN } from "../plugin.mjs";
+import { CHECKS_DIR, loadDir } from "./paths.mjs";
 import { sha256, stageHash } from "./stage.mjs";
 import { readRun, runNames } from "./trace.mjs";
 
@@ -36,7 +37,7 @@ function readStage(setup) {
     }
   };
   return {
-    plugin: join(setup.stage, PLUGIN_IN_STAGE),
+    plugin: join(setup.stage, PLUGIN),
     recorded: setup.stage_hash,
     hash: stageHash(setup.stage),
     version: read("VERSION")?.toString("utf8").trim() ?? null,
