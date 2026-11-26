@@ -6,6 +6,8 @@
 import { afterAll } from "bun:test";
 import { fileURLToPath } from "node:url";
 
+import { bunPins, bunTooOld, bunTooOldMessage } from "../tools/bun-pin.mjs";
+
 const extensionDir = fileURLToPath(new URL("../plugins/pstack/pi/", import.meta.url));
 
 function piInstalled() {
@@ -15,6 +17,14 @@ function piInstalled() {
   } catch {
     return false;
   }
+}
+
+// Unlike the Pi note, this stops the run: under an older bun the suite reports
+// dozens of failures that point at the lockfile, not at the real cause.
+const [pinned] = bunPins();
+if (pinned && bunTooOld(Bun.version, pinned)) {
+  console.error(bunTooOldMessage(Bun.version, pinned));
+  process.exit(1);
 }
 
 // Nested `bun test` runs that tests spawn inherit the variable and stay quiet.

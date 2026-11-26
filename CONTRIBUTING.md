@@ -35,14 +35,18 @@ When a clean merge matches the new upstream text and mode, the sync reports it a
 
 ## Before you open a PR
 
-Install the root dependencies and the copy of Pi the tests load, then run the generator and the tests:
+Install the root dependencies and the copy of Pi the tests load, run the generator to write its output, then run every CI check that needs no extra service:
 
 ```shell
 bun install --frozen-lockfile
 bun install --frozen-lockfile --cwd plugins
 bun tools/generate.mjs
-bun test tests/
+bun tools/check.mjs
 ```
+
+`bun tools/check.mjs` runs the generator check, the tests, the fork and substitution-rule checks, the vendored scripts suite, and the Pi typecheck when a Pi package is installed. It runs `markdownlint`, `shellcheck`, `actionlint`, `lychee`, and `zizmor` when they are on your `PATH` (`npx` and `uvx` for the two that CI runs through them). It prints `SKIPPED` and the reason for any check it cannot run, and its last line lists what passed, failed, and was skipped. A skipped check is not a pass. The fork and rule checks clone upstream, so they need network access.
+
+CI pins bun in `.github/workflows/ci.yml`. A bun older than that major and minor cannot parse `plugins/bun.lock`, so `bun test` and `bun tools/check.mjs` stop and name the version to upgrade to.
 
 The root `package.json` declares `typebox` and the optional `@earendil-works/pi-coding-agent` as peer dependencies, because Pi provides both to an extension at runtime. The root `bun.lock` pins `typebox` for the generator, which checks hook files against it, and for the tests under `tests/pi/`, which load the extension outside Pi. Those tests load Pi's package as a Pi process does, signal handlers included, from the copy that `plugins/package.json` pins and `plugins/bun.lock` locks. It sits on the extension's module path but outside every plugin and outside the root package that `pi install` installs, so no user downloads it, and npm never resolves it on a user's install.
 
@@ -124,7 +128,7 @@ Dependabot keeps the pinned action SHAs current. The vendored scripts' one runti
 
 Plugin auto-update installs **by version number**, not by tracking `main`. A skill fix merged without a version bump is inert on every installed copy, because the updater sees the same version it already has and does nothing.
 
-So: any PR that changes skill behavior either bumps the version itself or is followed by a release PR that does. The bump is three steps: edit the root `VERSION` file, add a `CHANGES.md` entry under a `## <version>` heading describing what changed and why, and run `bun tools/generate.mjs` to stamp the manifests. Forgetting any of the three fails CI. Run the full invariant script (including the behavioral leg) before merging.
+So: any PR that changes skill behavior either bumps the version itself or is followed by a release PR that does. The bump is three steps: edit the root `VERSION` file, add a `CHANGES.md` entry under a `## <version>` heading describing what changed and why, and run `bun tools/generate.mjs` to stamp the manifests. CI checks only that the newest `CHANGES.md` heading matches `VERSION` and that the generated files are current, so a skill edit with no bump and no entry passes CI and ships nothing. Check the bump yourself. Run `bun tools/check.mjs`, and `tests/skill-collision-repro.sh` (the behavioral leg, which CI cannot run), before merging.
 
 The `open-pstack` installer in `installer/` is versioned with the rest: the generator stamps `installer/package.json` from `VERSION`. Pushing the `vX.Y.Z` tag runs `.github/workflows/release-npm.yml`, which checks that the tag, `VERSION`, and the installer version agree, then publishes `open-pstack` to npm with provenance through trusted publishing. It skips a version npm already has. Trusted publishing is configured from the package's settings page, so the package must exist first: publish the first version by hand with `npm login` and `npm publish --access public` in `installer/`, then add this repository and `release-npm.yml` as the trusted publisher. A new trusted publisher expires unless it completes a publish within 2 days, so add it shortly before pushing the next tag. Run `npm pack --dry-run` in `installer/` to preview the tarball, which `prepack` fills with the plugin and licenses.
 
