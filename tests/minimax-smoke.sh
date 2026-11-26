@@ -10,7 +10,7 @@
 #
 # Needs node, jq, and npm unless MCODE names an installed `mcode`. Makes no
 # model calls and needs no sign-in. Skips with exit 0 when neither npm nor
-# MCODE is available. CI does not run it.
+# MCODE is available. CI runs it and requires the "checks passed" line.
 #
 #   tests/minimax-smoke.sh                        # installs @minimax-ai/code@0.7.4
 #   MCODE_VERSION=0.7.5 tests/minimax-smoke.sh
