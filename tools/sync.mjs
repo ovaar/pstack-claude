@@ -550,7 +550,6 @@ export function syncComponent({
     else if (kind === "binary-conflict") report.binaryConflicts.push(rel);
     else if (kind === "deleted") report.deleted.push(rel);
     else if (kind === "port-only") report.portOnly.push(rel);
-    else if (!["added", "updated", "merged"].includes(kind)) throw new Error(`${rel}: no report entry for ${kind}`);
   }
   report.forked.sort((a, b) => b.changed - a.changed);
   if (forks) {

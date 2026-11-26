@@ -265,6 +265,7 @@ describe("parseSubstitutions", () => {
     expect(() => parseRule(rule({ pattern: "" }), 0)).toThrow("exactly one");
     expect(() => parseRule({ pattern: "a", rationale: "fixture" }, 0)).toThrow("needs a replacement string");
     expect(() => parseRule({ pattern: "a", replacement: "X" }, 0)).toThrow("needs a rationale");
+    expect(() => parseRule(rule({ pattern: "a", files: 5 }), 0)).toThrow("files must be a regex source string");
   });
 
   test("an invalid regex or files regex fails naming the rule and the source", () => {
@@ -359,6 +360,7 @@ describe("parseForks", () => {
   test("a malformed entry fails naming the component and path", () => {
     expect(() => parse({ reason: "x" })).toThrow(`forks.json kit "${path}": unknown field "reason"`);
     expect(() => parse({ why: undefined })).toThrow(`forks.json kit "${path}": missing field "why"`);
+    expect(() => parse({ why: "  " })).toThrow(`forks.json kit "${path}": why must be a sentence`);
     expect(() => parse({ kind: "translation" })).toThrow(`forks.json kit "${path}": unknown kind "translation"`);
     expect(() => parse({ since: "latest" })).toThrow(`forks.json kit "${path}": since "latest" is not a version`);
     expect(() => parse({ upstream: "maybe" })).toThrow(`forks.json kit "${path}": upstream "maybe"`);
@@ -1689,6 +1691,18 @@ describe("sync CLI", () => {
     expect(readdirSync(scratch).filter((name) => name.startsWith("pstack-"))).toEqual([]);
   });
 
+  test("a binary file changed upstream and in the port exits 1 naming it, and leaves the pin alone", () => {
+    const bytes = (last) => Buffer.from([0x00, 0xff, last]);
+    const { run, pin, oldSha } = cli({ oldText: bytes(1), newText: bytes(2), localText: bytes(3) });
+
+    const result = run();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("FAIL: binary files changed upstream and in the port cannot carry conflict markers");
+    expect(result.stderr).toContain("  plugins/pstack/skills/s.md\n");
+    expect(pin()).toBe(oldSha);
+  });
+
   test("a denylist failure exits 1 and removes its scratch clone", () => {
     const { run, scratch } = cli({ oldText: "one\n", newText: "run control-cli\n", localText: "one\n" });
 
@@ -1789,7 +1803,7 @@ describe("sync CLI", () => {
 
   test("a stray argument fails naming it above the usage line, and nothing is written or pinned", () => {
     const { run, pin, local, oldSha } = cli({ oldText: "one\n", newText: "two\n", localText: "one\n" });
-    const usage = "usage: bun tools/sync.mjs <kit> <new-sha> [--dry-run]\n";
+    const usage = "usage: bun tools/sync.mjs <kit> <new-sha> [--dry-run]\n       bun tools/sync.mjs --check-rules\n";
 
     for (const [flags, named] of [
       [["--dry"], 'unexpected argument: "--dry"\n'],
