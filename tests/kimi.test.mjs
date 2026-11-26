@@ -29,4 +29,8 @@ test("Kimi manifest requires its packaged skills and prompt", () => {
   expect(() => validateKimiManifest(manifest, { pathExists: () => true })).not.toThrow();
   expect(() => validateKimiManifest({ ...manifest, skills: "./missing" }, { pathExists: () => true })).toThrow();
   expect(() => validateKimiManifest(manifest, { pathExists: () => false })).toThrow();
+  expect(() => validateKimiManifest({ ...manifest, name: "other" }, { pathExists: () => true })).toThrow("expected pstack name");
+  expect(() => validateKimiManifest({ ...manifest, systemPromptPath: "./missing.md" }, { pathExists: () => true })).toThrow(
+    "systemPromptPath must point",
+  );
 });
