@@ -83,13 +83,16 @@ export function writeEvidence(dir, result) {
 const roundsFile = (root) => join(root, "rounds.json");
 const failedRounds = (root) => (existsSync(roundsFile(root)) ? JSON.parse(readFileSync(roundsFile(root), "utf8")) : []);
 
-// A round is one more failed run since the last pass.
+// A round is one more failed run since the last full pass. A run that
+// passed with a check skipped leaves the count alone: running one flow that
+// passes must not clear the failures of another.
 export const nextRound = (root) => failedRounds(root).length + 1;
 
 export function recordRound(root, result) {
-  if (result.verdict === "SKIPPED") return;
+  const full = result.checks.every((check) => check.verdict === "pass");
+  if (result.verdict !== "FAIL" && !full) return;
   const failed = result.checks.flatMap((check) => check.failed ?? []);
-  const rounds = result.verdict === "PASS" ? [] : [...failedRounds(root), { run: result.run, subject_id: result.subject_id, failed }];
+  const rounds = full ? [] : [...failedRounds(root), { run: result.run, subject_id: result.subject_id, failed }];
   writeFileSync(roundsFile(root), `${JSON.stringify(rounds, null, 2)}\n`);
 }
 

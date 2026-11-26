@@ -67,20 +67,23 @@ test("the three written files are redacted", async () => {
   expect(JSON.parse(readFileSync(join(dir, "receipt.json"), "utf8")).checks[1].failed).toEqual(["S3.stderr"]);
 });
 
-test("a round counts the failed runs since the last pass", () => {
+test("a round counts the failed runs since the last full pass", () => {
   const root = tempDir();
-  const ended = (verdict, failed = []) => ({ verdict, run: "r", subject_id: "s", checks: [{ failed }] });
+  const ended = (verdict, ...checks) => ({ verdict, run: "r", subject_id: "s", checks });
+  const failedS3 = { verdict: "fail", failed: ["S3.exit-code"] };
   expect(nextRound(root)).toBe(1);
-  recordRound(root, ended("FAIL", ["S3.exit-code"]));
-  recordRound(root, ended("SKIPPED"));
+  recordRound(root, ended("FAIL", { verdict: "pass", failed: [] }, failedS3));
+  recordRound(root, ended("SKIPPED", { verdict: "skipped" }, { verdict: "skipped" }));
   expect(nextRound(root)).toBe(2);
-  recordRound(root, ended("FAIL", ["S3.exit-code"]));
+  recordRound(root, ended("FAIL", { verdict: "pass", failed: [] }, failedS3));
   expect(nextRound(root)).toBe(3);
   expect(JSON.parse(readFileSync(join(root, "rounds.json"), "utf8"))).toEqual([
     { run: "r", subject_id: "s", failed: ["S3.exit-code"] },
     { run: "r", subject_id: "s", failed: ["S3.exit-code"] },
   ]);
-  recordRound(root, ended("PASS"));
+  recordRound(root, ended("PASS", { verdict: "pass", failed: [] }, { verdict: "skipped" }));
+  expect(nextRound(root)).toBe(3);
+  recordRound(root, ended("PASS", { verdict: "pass", failed: [] }, { verdict: "pass", failed: [] }));
   expect(nextRound(root)).toBe(1);
 });
 
