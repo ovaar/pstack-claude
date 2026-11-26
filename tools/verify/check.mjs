@@ -111,9 +111,11 @@ function judge(check, setup, stage, dir) {
   }
 
   const runs = existsSync(dir) ? runNames(dir).map((name) => readRun(dir, name)) : [];
+  // Every surface check is a zero-model run.
   const rules = runs.flatMap((run) => integrity(run, stage, check.tier === "surface"));
   let assertions = [];
-  let reason = null;
+  // A check that asks for no trace must not pass because none was there.
+  let reason = runs.length ? null : "every trace is missing";
   try {
     assertions = check.assertions({
       trace: (name) => runs.find((run) => run.name === name)?.trace ?? missing(`the ${name} trace`),

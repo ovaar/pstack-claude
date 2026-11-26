@@ -183,6 +183,14 @@ describe("verdicts other than pass and fail", () => {
     expect(verdicts(judged)).toEqual({ S2: "error", S3: "error" });
   });
 
+  test("a check that reads no trace does not pass when no trace was recorded", async () => {
+    const checks = tempDir();
+    writeFileSync(join(checks, "S9-asks-nothing.mjs"), 'export const title = "asks nothing";\nexport const tier = "surface";\nexport const assertions = () => [];\n');
+    const judged = await check(evidence({ setup: { selected: ["S9"] } }), checks);
+    expect(judged.line).toBe("FAIL surface 0/1 | behavior NOT BUILT | round 1");
+    expect(judged.checks[0]).toMatchObject({ verdict: "unobservable", reason: "every trace is missing" });
+  });
+
   test("a check that throws is an error, and its tier is counted", async () => {
     const checks = tempDir();
     writeFileSync(join(checks, "B9-throws.mjs"), 'export const title = "throws";\nexport const tier = "behavior";\nexport function assertions() {\n  throw new TypeError("boom");\n}\n');
