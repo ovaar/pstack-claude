@@ -17,7 +17,7 @@ const stepsOf = (workflow) => Object.values(workflow.jobs).flatMap((job) => job.
 const bunVersions = (workflow) => [...new Set(stepsOf(workflow).filter((step) => step.uses?.startsWith("oven-sh/setup-bun@")).map((step) => step.with["bun-version"]))];
 
 const CLI = /@anthropic-ai\/claude-code(?:@([^\s"']+))?/g;
-const reads = (run) => run.includes("tools/verify/cli-pin.json");
+const reads = (run) => /\bjq\b[^\n]*tools\/verify\/cli-pin\.json/.test(run);
 
 // The problems one workflow has with its CLI install, as plain strings.
 function cliProblems(workflow, verified) {
