@@ -1,16 +1,18 @@
 // Answers to 278d485 and the class of c02fd49: a user who turns the session
-// hook off gets no mandate, and one who has not gets it. Three runs through
+// hook off gets no mandate, and one who has not gets it. Four runs through
 // the real CLI differ in one thing each. The control has neither switch and
 // must get the mandate, which ties an empty stdout elsewhere to the switch
-// and not to a hook that prints nothing; `PSTACK_SESSION_HOOK=off` in the
-// environment and `session hook: off` in pstack-models.md under the config
-// directory must each leave the hook's stdout empty. Setup adds the variable
+// and not to a hook that prints nothing. `PSTACK_SESSION_HOOK=on` must get the
+// mandate too, which keeps the switch from being any value at all.
+// `PSTACK_SESSION_HOOK=off` in the environment and `session hook: off` in
+// pstack-models.md under the config directory must each leave the hook's
+// stdout empty. Setup adds the variable
 // and writes the sheet, and the integrity rules hold the run to them.
 export const title = "the session hook switches turn the mandate off";
 export const tier = "surface";
 const INPUT = ["--input-format", "stream-json"];
-export const args = { control: INPUT, "env-off": INPUT, "sheet-off": INPUT };
-export const env = { "env-off": { PSTACK_SESSION_HOOK: "off" } };
+export const args = { control: INPUT, "env-off": INPUT, "env-on": INPUT, "sheet-off": INPUT };
+export const env = { "env-off": { PSTACK_SESSION_HOOK: "off" }, "env-on": { PSTACK_SESSION_HOOK: "on" } };
 export const files = { "sheet-off": { "pstack-models.md": "session hook: off\n" } };
 
 const HOOK = "SessionStart:startup";
@@ -19,7 +21,7 @@ const MANDATE = "plugins/pstack/hooks/session-start-context.md";
 export function assertions({ trace, stage }) {
   const mandate = stage.sha256(MANDATE);
   const found = [];
-  for (const [run, silent] of [["control", false], ["env-off", true], ["sheet-off", true]]) {
+  for (const [run, silent] of [["control", false], ["env-on", false], ["env-off", true], ["sheet-off", true]]) {
     const responses = trace(run)
       .hooks()
       .filter((hook) => hook.name === HOOK);

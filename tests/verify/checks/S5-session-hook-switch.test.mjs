@@ -26,7 +26,7 @@ test("the untouched tree passes, and its row tells the control's mandate from th
   expect(result.checks.find((each) => each.id === "S5")).toMatchObject({ verdict: "pass", failed: [], observations: [] });
   const ran = "1 hook_response named SessionStart:startup; exit_code 0; outcome success";
   expect(markdown(result).split("\n").find((line) => line.startsWith("| S5 "))).toBe(
-    `| S5 the session hook switches turn the mandate off | pass | ${ran}; stdout sha256 ${MANDATE_SHA256} (983 bytes); ${ran}; stdout 0 bytes; ${ran}; stdout 0 bytes; 42 of 42 integrity rules hold |`,
+    `| S5 the session hook switches turn the mandate off | pass | ${ran}; stdout sha256 ${MANDATE_SHA256} (983 bytes); ${ran}; stdout sha256 ${MANDATE_SHA256} (983 bytes); ${ran}; stdout 0 bytes; ${ran}; stdout 0 bytes; 56 of 56 integrity rules hold |`,
   );
 });
 
@@ -36,6 +36,12 @@ describe("recorded failures", () => {
     const judged = await judge({ "S5.env-off": { fixture: "env-switch-ignored.S5.env-off" } });
     expect(judged.failed).toEqual(["S5.env-off-silent"]);
     expect(said(judged, "env-off-silent")).toBe("saw stdout 983 bytes, want stdout of 0 bytes");
+  });
+
+  test("a hook that treats any value of PSTACK_SESSION_HOOK as off fails env-on-mandate alone", async () => {
+    const judged = await judge({ "S5.env-on": { fixture: "any-value-is-off.S5.env-on" } });
+    expect(judged.failed).toEqual(["S5.env-on-mandate"]);
+    expect(said(judged, "env-on-mandate")).toStartWith("saw stdout sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 (0 bytes), want the stage's hooks/session-start-context.md");
   });
 
   test("a hook that looks for the sheet in the wrong directory fails sheet-off-silent alone", async () => {
@@ -54,6 +60,8 @@ describe("one doctored trace per assertion", () => {
   test.each([
     ["S5.control-ran", { "S5.control": { events: (events) => void (hook(events).exit_code = 126) } }],
     ["S5.env-off-ran", { "S5.env-off": { events: (events) => void Object.assign(hook(events), { exit_code: 1, outcome: "error" }) } }],
+    ["S5.env-on-ran", { "S5.env-on": { events: (events) => void (hook(events).exit_code = 1) } }],
+    ["S5.env-on-mandate", { "S5.env-on": { events: (events) => void (hook(events).stdout += " ") } }],
     ["S5.sheet-off-ran", { "S5.sheet-off": { events: (events) => void (hook(events).stderr = "warning: slow disk\n") } }],
     ["S5.control-mandate", { "S5.control": { events: (events) => void (hook(events).stdout += " ") } }],
   ])("%s fails", async (id, edits) => {
@@ -74,12 +82,12 @@ describe("one doctored trace per assertion", () => {
 
   test("an emptied mandate fails the control", async () => {
     const judged = await judge({ stage: (stage) => writeFileSync(join(stage, MANDATE), "") });
-    expect(judged.failed).toEqual(["S5.control-mandate"]);
+    expect(judged.failed).toEqual(["S5.control-mandate", "S5.env-on-mandate"]);
   });
 
   test("a mandate file that is gone fails the control and says so", async () => {
     const judged = await judge({ stage: (stage) => rmSync(join(stage, MANDATE)) });
-    expect(judged.failed).toEqual(["S5.control-mandate"]);
+    expect(judged.failed).toEqual(["S5.control-mandate", "S5.env-on-mandate"]);
     expect(said(judged, "control-mandate")).toEndWith("want the stage's hooks/session-start-context.md, which is not there");
   });
 });
