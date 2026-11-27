@@ -28,7 +28,7 @@ test("the untouched tree passes, and its row quotes the hook's exit code and the
   const result = await run();
   expect(result.checks.find((each) => each.id === "S3")).toMatchObject({ verdict: "pass", failed: [], observations: [] });
   expect(markdown(result).split("\n").find((line) => line.startsWith("| S3 "))).toBe(
-    `| S3 the mandate arrives at startup | pass | 1 hook_response named SessionStart:startup; exit_code 0; outcome success; stdout sha256 ${MANDATE_SHA256} (983 bytes); 7 pstack: skills named in stdout, each in init.skills; empty stderr; 13 of 13 integrity rules hold |`,
+    `| S3 the mandate arrives at startup | pass | 1 hook_response named SessionStart:startup; SessionStart matcher startup\\|resume\\|clear\\|compact in the stage's hooks.json; exit_code 0; outcome success; stdout sha256 ${MANDATE_SHA256} (983 bytes); 7 pstack: skills named in stdout, each in init.skills; empty stderr; 13 of 13 integrity rules hold |`,
   );
 });
 
@@ -70,6 +70,31 @@ describe("a mandate that arrives and routes nowhere", () => {
     const gut = (events) => void (init(events).skills = init(events).skills.filter((name) => !name.startsWith("pstack:")));
     const judged = await judge({ S3: { events: gut } });
     expect(said(judged, "skills-named")).toStartWith("saw named in stdout and not in init.skills: pstack:poteto-mode, pstack:tdd, pstack:architect, pstack:how, pstack:why, pstack:arena, pstack:interrogate, want ");
+  });
+});
+
+// What a startup hook handed to the session from outside the plugin leaves:
+// the recorded response, over a tree that registers no hook for startup.
+describe("a response the tree cannot have produced", () => {
+  const HOOKS = "plugins/pstack/hooks/hooks.json";
+  const hooksWith = (matcher) => JSON.stringify({ hooks: { SessionStart: [{ ...(matcher === undefined ? {} : { matcher }), hooks: [{ type: "command", command: "x" }] }] } });
+
+  test.each([
+    ["a matcher that leaves startup out", hooksWith("resume|clear|compact"), "saw SessionStart matcher resume|clear|compact in the stage's hooks.json"],
+    ["a hooks file with no SessionStart hook", JSON.stringify({ hooks: {} }), "saw no SessionStart hook in the stage's hooks.json"],
+    ["a hooks file that is not JSON", "{ nope", "saw no SessionStart hook in the stage's hooks.json"],
+  ])("%s fails registered alone", async (_, hooks, saw) => {
+    const judged = await judge({ stage: (stage) => writeFileSync(join(stage, HOOKS), hooks) });
+    expect(judged.failed).toEqual(["S3.registered"]);
+    expect(said(judged, "registered")).toBe(`${saw}, want a SessionStart hook in the stage's hooks.json whose matcher covers startup`);
+  });
+
+  test("no hooks file fails registered alone", async () => {
+    expect((await judge({ stage: (stage) => rmSync(join(stage, HOOKS)) })).failed).toEqual(["S3.registered"]);
+  });
+
+  test.each([["startup"], ["startup|resume"], ["*"], [""], [undefined], ["start.*"]])("a matcher of %p covers startup", async (matcher) => {
+    expect((await judge({ stage: (stage) => writeFileSync(join(stage, HOOKS), hooksWith(matcher)) })).verdict).toBe("pass");
   });
 });
 
