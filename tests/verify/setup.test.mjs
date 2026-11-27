@@ -242,7 +242,7 @@ describe("a session's environment", () => {
     }
     mkdirSync(join(stage, "plugins/pstack/skills/empty"), { recursive: true });
     const flows = [{ id: "S6", runs: [{ name: "typed", args: [], stdin: ({ skills }) => skills.map((name) => `/pstack:${name}\n`).join("") }] }];
-    expect(plan(flows, tempDir(), parent, stage)[0].stdin).toBe("/pstack:bro\n/pstack:tdd\n");
+    expect(plan(flows, tempDir(), parent, { stage })[0].stdin).toBe("/pstack:bro\n/pstack:tdd\n");
   });
 });
 

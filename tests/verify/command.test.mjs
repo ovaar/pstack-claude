@@ -30,9 +30,11 @@ const HOSTILE = { PSTACK_SESSION_HOOK: "off", PLUGIN_ROOT: "/x", MINIMAX_PLUGIN_
 
 // What the surrounding job exports must not decide a test: a job that
 // requires the CLI, or one started from a git hook.
+// Nor may the credential or the login of whoever runs the tests: the model
+// tier signs in by what the environment holds, and a test says which.
 function verify(args, env = {}) {
-  const { PSTACK_VERIFY_REQUIRE_CLI, GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, ...inherited } = process.env;
-  const result = spawnSync(process.execPath, [VERIFY, ...args], { encoding: "utf8", env: { ...inherited, PATH, TMPDIR: tmp, PSTACK_VERIFY_CLAUDE: FAKE_CLI, ...env } });
+  const { PSTACK_VERIFY_REQUIRE_CLI, GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, CLAUDE_CONFIG_DIR, ...inherited } = process.env;
+  const result = spawnSync(process.execPath, [VERIFY, ...args], { encoding: "utf8", env: { ...inherited, HOME: tempDir(), PATH, TMPDIR: tmp, PSTACK_VERIFY_CLAUDE: FAKE_CLI, ...env } });
   return { status: result.status, lines: result.stdout.split("\n"), stdout: result.stdout, stderr: result.stderr };
 }
 
@@ -62,8 +64,9 @@ test.skipIf(process.platform === "win32")("a full run passes every check, hands 
 
   const receipt = json(join(dir, "receipt.json"));
   expect(receipt).toMatchObject({ verdict: "STAND-IN", selection: { tier: "surface", flow: null }, cli_version: "2.1.332", cli_stand_in: NAMED, cli_sha256: sha256(readFileSync(FAKE_CLI)), cost_usd: 0 });
-  expect(receipt.checks.length).toBe(tally(run.lines[0]).of);
-  expect(receipt.checks.filter((each) => each.verdict !== "pass")).toEqual([]);
+  expect(receipt.checks.filter((each) => each.tier === "surface").length).toBe(tally(run.lines[0]).of);
+  // The model tier was not asked for, and the receipt says so.
+  expect(receipt.checks.filter((each) => each.verdict !== "pass").map((each) => [each.tier, each.verdict])).toEqual(receipt.checks.filter((each) => each.tier === "behavior").map(() => ["behavior", "skipped"]));
   expect(receipt.checks.map((each) => each.id)).toEqual(json(join(dir, "setup.json")).checks.map((each) => each.id));
 
   const traces = tracesOf(dir);
@@ -125,7 +128,7 @@ test.skipIf(process.platform === "win32")("--flow runs one check, and the receip
   const [dir] = runsOf(root);
   expect(readdirSync(join(dir, "traces"))).toEqual(["S2"]);
   const { checks } = json(join(dir, "receipt.json"));
-  expect(tally(run.lines[0])).toMatchObject({ word: "STAND-IN", failed: checks.length - 1 });
+  expect(tally(run.lines[0])).toMatchObject({ word: "STAND-IN", failed: checks.filter((each) => each.tier === "surface").length - 1 });
   expect(checks.find((each) => each.id === "S2")).toEqual({ id: "S2", tier: "surface", verdict: "pass" });
   expect(checks.find((each) => each.id === "S3")).toEqual({ id: "S3", tier: "surface", verdict: "skipped", reason: "not selected" });
   expect(checks.filter((each) => each.id !== "S2" && each.verdict !== "skipped")).toEqual([]);
@@ -137,9 +140,9 @@ test("without a CLI the run is skipped, and fails where a CLI is required or was
     const run = verify(["--tree", repo, "--evidence", tempDir()], env);
     return [run.status, run.lines[0]];
   };
-  expect(first({ PSTACK_VERIFY_CLAUDE: "" })).toEqual([0, "SKIPPED surface: claude is not on PATH | behavior NOT BUILT | round 1"]);
-  expect(first({ PSTACK_VERIFY_CLAUDE: "", PSTACK_VERIFY_REQUIRE_CLI: "1" })).toEqual([1, "FAIL surface: claude is not on PATH | behavior NOT BUILT | round 1"]);
-  expect(first({ PSTACK_VERIFY_CLAUDE: join(tmp, "no-such-claude") })).toEqual([1, "FAIL surface: PSTACK_VERIFY_CLAUDE does not name an executable | behavior NOT BUILT | round 1"]);
+  expect(first({ PSTACK_VERIFY_CLAUDE: "" })).toEqual([0, "SKIPPED surface: claude is not on PATH | behavior: claude is not on PATH | round 1"]);
+  expect(first({ PSTACK_VERIFY_CLAUDE: "", PSTACK_VERIFY_REQUIRE_CLI: "1" })).toEqual([1, "FAIL surface: claude is not on PATH | behavior: claude is not on PATH | round 1"]);
+  expect(first({ PSTACK_VERIFY_CLAUDE: join(tmp, "no-such-claude") })).toEqual([1, "FAIL surface: PSTACK_VERIFY_CLAUDE does not name an executable | behavior: PSTACK_VERIFY_CLAUDE does not name an executable | round 1"]);
 }, LONG);
 
 test("a tree with nothing to verify fails before anything runs, and leaves no run behind", () => {
@@ -217,10 +220,80 @@ test("a wrong argument is a usage error, with nothing run", () => {
     const run = verify(args);
     return [run.status, run.stdout, run.stderr.split("\n")[0]];
   };
-  const first = "usage: bun tools/verify.mjs [--tier surface|behavior|all] [--flow <id>] [--tree <checkout>] [--evidence <dir>] [--jobs 1-3]";
+  const first = "usage: bun tools/verify.mjs [--tier surface|behavior|all] [--flow <id>] [--tree <checkout>] [--evidence <dir>] [--jobs 1-3] [--require-behavior]";
   expect(usage(["--tier", "nope"])).toEqual([2, "", first]);
   expect(usage(["--jobs", "4"])).toEqual([2, "", first]);
   expect(usage(["--tree"])).toEqual([2, "", first]);
   expect(usage(["check"])).toEqual([2, "", first]);
-  expect(usage(["--flow", "S9"])[2]).toMatch(/^no flow S9; flows: .*\bS2\b.*\bS3\b/);
+  expect(usage(["--flow", "S9"])[2]).toMatch(/^no flow S9; flows: B1, B2, B3, B4, B5, .*\bS2\b.*\bS3\b/);
+  expect(usage(["--require-behavior", "--tier"])).toEqual([2, "", first]);
+  expect(usage(["--tier", "--require-behavior"])).toEqual([2, "", first]);
+}, LONG);
+
+// The model tier. The stand-in replays the recordings of real sessions, so
+// what is tested here is how the tier is signed in and what it reports, not
+// what a model does.
+const KEY = ["sk", "ant", "not", "a", "real", "key", "x".repeat(20)].join("-");
+const modelRuns = (dir) => tracesOf(dir).filter((trace) => /\/traces\/B\d\//.test(trace));
+const filesUnder = (dir) => readdirSync(dir, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => join(entry.parentPath, entry.name));
+
+test.skipIf(process.platform === "win32")("with no credential the model tier says so on the first line, and --require-behavior makes that a failure", () => {
+  const repo = productRepo();
+  const root = tempDir();
+  const run = verify(["--tree", repo, "--evidence", root]);
+  expect(run.lines[0]).toMatch(/^STAND-IN surface (\d+)\/\1 \| behavior NOT RUN: no credential \| round 1$/);
+  expect(run.status).toBe(0);
+  const [dir] = runsOf(root);
+  expect(existsSync(join(dir, "traces/B1"))).toBe(false);
+  expect(json(join(dir, "receipt.json"))).toMatchObject({ model_tier: { mode: "none", credential_names: [], required: false, model_calls: 0 } });
+  expect(json(join(dir, "receipt.json")).checks.filter((each) => each.tier === "behavior").map((each) => [each.verdict, each.reason])).toEqual(Array(5).fill(["skipped", "no credential"]));
+
+  const required = verify(["--require-behavior", "--tree", repo, "--evidence", tempDir()]);
+  expect(required.status).toBe(1);
+  expect(required.lines[0]).toMatch(/^FAIL surface (\d+)\/\1 \| behavior NOT RUN: no credential \| round/);
+  expect(required.stdout).toContain("no credential, and --require-behavior asks for the model tier");
+}, LONG);
+
+test.skipIf(process.platform === "win32")("a credential in the environment signs in the model tier by name, in a throwaway config directory, and is written nowhere", () => {
+  const root = tempDir();
+  const run = verify(["--tree", productRepo(), "--evidence", root], { ANTHROPIC_API_KEY: KEY, CLAUDE_CODE_OAUTH_TOKEN: "" });
+  expect(run.lines[0]).toMatch(/^STAND-IN surface (\d+)\/\1 \| behavior 5\/5 \(\d+ model calls, \$\d\.\d{4}\) \| round 1$/);
+  expect(run.status).toBe(0);
+  const [dir] = runsOf(root);
+  expect(run.stdout).toContain("- model tier: signed in by ANTHROPIC_API_KEY in a throwaway config directory;");
+  expect(json(join(dir, "setup.json")).behavior).toMatchObject({ mode: "clean", credential: ["ANTHROPIC_API_KEY"], required: false, planned: { max_usd: 0.45, max_turns: 15 } });
+
+  const names = (trace) => json(`${trace}.sidecar.json`).env;
+  expect(modelRuns(dir).length).toBe(15);
+  const condition = (trace) => (trace.includes("/B5/") ? ["PSTACK_SESSION_HOOK"] : []);
+  for (const trace of modelRuns(dir)) expect(names(trace)).toEqual([...SESSION_VARIABLES, "ANTHROPIC_API_KEY", ...condition(trace)].sort());
+  // A surface run has no credential, only the switches its flow declares.
+  const sessions = json(join(dir, "setup.json")).sessions;
+  const declared = (trace) => {
+    const [name, check] = trace.split("/").reverse();
+    return Object.keys(sessions.find((session) => session.check === check && session.name === name).env);
+  };
+  for (const trace of tracesOf(dir).filter((each) => !modelRuns(dir).includes(each))) expect(names(trace)).toEqual([...SESSION_VARIABLES, ...declared(trace)].sort());
+  // The hook switch reaches the sessions that declare it, and only those.
+  const hookOff = tracesOf(dir).filter((trace) => names(trace).includes("PSTACK_SESSION_HOOK"));
+  expect(hookOff.map((trace) => trace.split("/").slice(-2).join("/")).sort()).toEqual(["B5/attempt-1", "B5/attempt-2", "B5/attempt-3", "S5/env-off", "S5/env-on"]);
+  expect(filesUnder(root).filter((file) => readFileSync(file).includes(KEY))).toEqual([]);
+  expect(readdirSync(tmp)).toEqual([]);
+}, LONG);
+
+test.skipIf(process.platform === "win32")("without a credential the model tier signs in as the person who runs it, with their own home and nothing else", () => {
+  const home = tempDir();
+  writeFileSync(join(home, ".stand-in-login"), "");
+  const root = tempDir();
+  const run = verify(["--tree", productRepo(), "--evidence", root], { HOME: home, USER: "someone-who-runs-it" });
+  expect(run.lines[0]).toMatch(/^STAND-IN surface (\d+)\/\1 \| behavior 5\/5 \(/);
+  const [dir] = runsOf(root);
+  expect(run.stdout).toContain("- model tier: signed in by the local login;");
+  expect(json(join(dir, "setup.json")).behavior).toMatchObject({ mode: "local", credential: [] });
+  for (const trace of modelRuns(dir)) {
+    expect(json(`${trace}.sidecar.json`).env).toEqual(SESSION_VARIABLES.filter((name) => name !== "CLAUDE_CONFIG_DIR").concat("USER", trace.includes("/B5/") ? ["PSTACK_SESSION_HOOK"] : []).sort());
+    // Not this run's sessions alone, so no transcript is read from it.
+    expect(existsSync(`${trace}.transcript.jsonl`)).toBe(false);
+  }
+  expect(filesUnder(root).filter((file) => readFileSync(file).includes("someone-who-runs-it"))).toEqual([]);
 }, LONG);

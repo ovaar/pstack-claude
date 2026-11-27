@@ -13,6 +13,9 @@ import { gitEnv } from "../../tools/verify/setup.mjs";
 import { sha256, stageHash, stageSeal } from "../../tools/verify/stage.mjs";
 import { FIXTURES } from "./scrub.mjs";
 
+// The line of skills/how/SKILL.md that B4 looks for in a subagent's prompt.
+const HOW_BRIEF = "> You are writing an architectural explanation for a senior engineer. Explore the codebase and write an explanation they could read.";
+
 const made = [];
 export function cleanup() {
   for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
@@ -64,7 +67,7 @@ export function fixtureStage(dir, { skills = false, agents = [] } = {}) {
   const listed = whole ? whole.skills.map((name) => ({ name: bare(name), hidden: !loaded.includes(name) })) : skills || [];
   for (const { name, hidden } of listed) {
     mkdirSync(join(dir, PLUGIN, "skills", name), { recursive: true });
-    writeFileSync(join(dir, PLUGIN, "skills", name, "SKILL.md"), FRONTMATTER({ name, ...(hidden ? { "user-invocable": false } : {}) }));
+    writeFileSync(join(dir, PLUGIN, "skills", name, "SKILL.md"), `${FRONTMATTER({ name, ...(hidden ? { "user-invocable": false } : {}) })}${name === "how" ? `\n${HOW_BRIEF}\n` : ""}`);
   }
   for (const name of whole ? whole.agents.map(bare) : agents) {
     mkdirSync(join(dir, PLUGIN, "agents"), { recursive: true });
@@ -99,7 +102,8 @@ export async function shipped(id) {
   return {
     checks: CHECKS_DIR,
     tree: { skills: true },
-    runs: flow.runs.map((run) => ({ check: id, name: run.name, args: run.args ?? [], command: run.command, env: run.env ?? {}, files: run.files ?? {}, fixture: `untouched.${id}.${run.name}` })),
+    behavior: flow.tier === "behavior",
+    runs: flow.runs.map((run) => ({ check: id, tier: flow.tier, name: run.name, args: run.args ?? [], command: run.command, env: run.env ?? {}, files: run.files ?? {}, fixture: `untouched.${id}.${run.name}` })),
   };
 }
 
@@ -108,14 +112,16 @@ export async function shipped(id) {
 // `edits[check]`, or `edits[check.run]` for one run, picks a recording (`fixture`), changes its events (`events`)
 // or its text (`raw`), changes the recorded `argv` or other sidecar fields,
 // adds a transcript or stderr, or leaves the trace out (`absent`). `stage` shapes the stage before setup
-// records it, `setup` changes setup's record, and `moved` changes the stage afterwards.
-export function evidence({ checks, runs, skills, tree = { skills } }, edits = {}) {
+// records it, `setup` changes setup's record, and `moved` changes the stage
+// afterwards. `behavior` records a model tier signed in as a person, the way
+// its recordings were made.
+export function evidence({ checks, runs, skills, tree = { skills }, behavior = false }, edits = {}) {
   const dir = tempDir();
   const stage = fixtureStage(join(dir, "stage"), tree);
   const sandbox = join(dir, "sandbox");
   edits.stage?.(stage);
   const sessions = runs.map((run) => {
-    // `S5` edits every run of the check, `S5.env-off` one of them.
+    // `S5` edits every run of the check, `S5.env-off` one of them, which wins.
     const edit = { ...edits[run.check], ...edits[`${run.check}.${run.name}`] };
     const fixture = edit.fixture ?? run.fixture;
     const named = (text) => text.replaceAll("<STAGE>", stage).replaceAll("<SANDBOX>", sandbox);
@@ -136,6 +142,8 @@ export function evidence({ checks, runs, skills, tree = { skills } }, edits = {}
     sandbox,
     cli: { path: "claude", real_path: "/opt/claude/2.1.332", sha256: "c".repeat(64), version: "2.1.332", stand_in: null, missing: false, required: false, problem: null },
     selection: { tier: "all", flow: null },
+    // The recordings of the model tier were made signed in as a person.
+    behavior: behavior ? { mode: "local", credential: [], required: false, planned: { max_usd: 0.45, max_turns: 15 } } : null,
     selected: [...new Set(runs.map((run) => run.check))],
     checks: listDir(checks),
     sessions: sessions.map(({ check, name, cwd, env = {}, files = {} }) => ({ check, name, cwd, env, files: Object.fromEntries(Object.entries(files).map(([file, text]) => [file, sha256(text)])) })),
@@ -145,7 +153,7 @@ export function evidence({ checks, runs, skills, tree = { skills } }, edits = {}
   writeFileSync(join(dir, "setup.json"), JSON.stringify(setup));
   edits.moved?.(stage);
 
-  for (const { check, name, args, command, env = {}, edit, events, transcript, named } of sessions) {
+  for (const { check, tier, name, args, command, env = {}, edit, events, transcript, named } of sessions) {
     if (edit.absent) continue;
     const text = (edit.events?.(events) ?? events).map((event) => `${JSON.stringify(event)}\n`).join("");
     const trace = edit.raw?.(text) ?? text;
@@ -159,7 +167,9 @@ export function evidence({ checks, runs, skills, tree = { skills } }, edits = {}
     if (edit.stderr) writeFileSync(file(".stderr"), edit.stderr);
     const places = { "<plugin>": join(stage, PLUGIN), "<stage>": stage };
     const started = command ? [setup.cli.path, ...command.map((word) => places[word] ?? word)] : [setup.cli.path, "-p", "--plugin-dir", join(stage, PLUGIN), "--model", "haiku", "--output-format", "stream-json", "--verbose", ...args];
-    const names = [...new Set(["PATH", "TMPDIR", "LANG", "HOME", "CLAUDE_CONFIG_DIR", ...Object.keys(env)])].sort();
+    // A session signed in as a person has their USER and no config directory of the verifier's.
+    const base = (tier ?? (behavior ? "behavior" : "surface")) === "behavior" ? ["PATH", "TMPDIR", "LANG", "HOME", "USER"] : ["PATH", "TMPDIR", "LANG", "HOME", "CLAUDE_CONFIG_DIR"];
+    const names = [...new Set([...base, ...Object.keys(env)])].sort();
     writeFileSync(file(".sidecar.json"), JSON.stringify({ argv: edit.argv?.(started) ?? started, env: names, exit_code: 0, trace_sha256: sha256(trace), ...edit.sidecar }));
   }
   return dir;

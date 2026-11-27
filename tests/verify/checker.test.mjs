@@ -294,7 +294,7 @@ describe("verdicts and the word that leads the line", () => {
   test("a check that throws is an error, and its tier is counted", async () => {
     const checks = checksWith("B9-throws.mjs", 'export const title = "throws";\nexport const tier = "behavior";\nexport function assertions() {\n  throw new TypeError("boom");\n}\n');
     const judged = await check(evidence({ checks, runs: [] }, { setup: { selected: ["B9"] } }), checks);
-    expect(judged.line).toBe("FAIL surface NOT BUILT | behavior 0/1 | round 1");
+    expect(judged.line).toBe("FAIL surface NOT BUILT | behavior 0/1 (0 model calls, $0.0000) | round 1");
     expect(judged.checks[0].verdict).toBe("error");
     expect(judged.checks[0].reason).toStartWith("TypeError: boom");
   });

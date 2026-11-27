@@ -26,7 +26,7 @@ const flows = (...runs) => [{ id: "S1", runs }];
 
 test.skipIf(process.platform === "win32")("a subcommand is started with the stage's directories in place of the names, and with no session flag", async () => {
   const [stage, out] = [tempDir(), tempDir()];
-  const runs = plan(flows({ name: "validate", command: ["plugin", "validate", "--json", "<plugin>"] }), tempDir(), parent, stage);
+  const runs = plan(flows({ name: "validate", command: ["plugin", "validate", "--json", "<plugin>"] }), tempDir(), parent, { stage });
   await drive(runs, { cli: stand(), stage, plugin: join(stage, "plugins/pstack"), out });
   expect(readFileSync(join(out, "S1/validate.jsonl"), "utf8").split("\n")).toEqual(["plugin", "validate", "--json", join(stage, "plugins/pstack"), ""]);
   expect(JSON.parse(readFileSync(join(out, "S1/validate.sidecar.json"), "utf8")).argv.slice(1)).toEqual(["plugin", "validate", "--json", join(stage, "plugins/pstack")]);
@@ -35,14 +35,14 @@ test.skipIf(process.platform === "win32")("a subcommand is started with the stag
 test("a subcommand that is not the plugin validator is not started", async () => {
   const [stage, out] = [tempDir(), tempDir()];
   for (const command of [["plugin", "install", "pstack"], ["mcp", "list"], ["--bare"], []]) {
-    const runs = plan(flows({ name: "x", command }), tempDir(), parent, stage);
+    const runs = plan(flows({ name: "x", command }), tempDir(), parent, { stage });
     await expect(drive(runs, { cli: stand(), stage, plugin: join(stage, "plugins/pstack"), out })).rejects.toThrow("the driver starts no subcommand like");
   }
 });
 
 test.skipIf(process.platform === "win32")("runs that share a config directory go one after the other, and the others go side by side", async () => {
   const [stage, out] = [tempDir(), tempDir()];
-  const runs = plan(flows({ name: "first", args: [] }, { name: "second", share: "first", args: [] }, { name: "alone", args: [] }), tempDir(), parent, stage);
+  const runs = plan(flows({ name: "first", args: [] }, { name: "second", share: "first", args: [] }, { name: "alone", args: [] }), tempDir(), parent, { stage });
   await drive(runs, { cli: stand(), stage, plugin: join(stage, "plugins/pstack"), out, jobs: 2 });
   const log = (name) => readFileSync(join(runs.find((run) => run.name === name).config, "log"), "utf8").trim().split("\n");
   expect(log("first")).toEqual(["start", "end", "start", "end"]);

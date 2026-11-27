@@ -87,6 +87,7 @@ test("tool uses, tool results, user events and replays come out as structured re
     subtype: "success",
     isError: false,
     costUsd: 0.0028,
+    terminalReason: null,
     turns: 3,
     models: ["claude-haiku-5-5"],
     permissionDenials: [{ tool: "Write", input: { file_path: "probe-note.txt" } }],

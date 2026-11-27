@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative } from "node:path";
 
 import { SKILLS } from "../plugin.mjs";
-import { PRODUCT, WATCHED } from "./paths.mjs";
+import { BUDGET_USD, MAX_MODEL_CALLS, PRODUCT, WATCHED } from "./paths.mjs";
 import { SESSION_FILES, sha256, stageHash, stageSeal } from "./stage.mjs";
 
 const PIN = JSON.parse(readFileSync(new URL("./cli-pin.json", import.meta.url), "utf8"));
@@ -90,6 +90,84 @@ export function childEnv(box, env = process.env) {
   return { ...Object.fromEntries(inherited), HOME: box.home, CLAUDE_CONFIG_DIR: box.config };
 }
 
+// Credentials are handed on by name and only to the sessions that call a
+// model. Where neither is set, a session signs in as the person who runs the
+// verifier: their own home and config directory, and on macOS the USER the
+// keychain entry is filed under. Nothing else of the environment comes along.
+export const CREDENTIALS = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"];
+const LOGIN = ["USER"];
+
+function localEnv(env, box) {
+  const inherited = [...INHERITED, ...LOGIN, ...(env.CLAUDE_CONFIG_DIR ? ["CLAUDE_CONFIG_DIR"] : [])].filter((name) => env[name] !== undefined).map((name) => [name, env[name]]);
+  return { ...Object.fromEntries(inherited), HOME: env.HOME ?? box.home };
+}
+
+// How the model tier is signed in. `clean`: a throwaway home and config
+// directory with the credential from the environment, the way CI runs it.
+// `local`: the real login, found by `claude auth status`, which costs no
+// model call. `none`: neither, and the tier does not run. Only the names of
+// the variables are recorded, never a value.
+export function behaviorAccess(cli, box, env = process.env) {
+  const named = CREDENTIALS.filter((name) => env[name]);
+  if (named.length) return { mode: "clean", credential: named };
+  if (cli.problem || !env.HOME) return { mode: "none", credential: [] };
+  const probe = spawnSync(cli.path, ["auth", "status"], { env: localEnv(env, box), encoding: "utf8", timeout: 30_000 });
+  let status = null;
+  try {
+    status = JSON.parse(probe.stdout);
+  } catch {}
+  return { mode: status?.loggedIn === true ? "local" : "none", credential: [] };
+}
+
+function sessionEnv(box, tier, access, env) {
+  if (tier !== "behavior") return childEnv(box, env);
+  if (access.mode === "local") return localEnv(env, box);
+  return { ...childEnv(box, env), ...Object.fromEntries(access.credential.map((name) => [name, env[name]])) };
+}
+
+// What a flow may cost is in its arguments, so it is read from there.
+function cap(args, flag, flow) {
+  const at = args.indexOf(flag);
+  const value = at === -1 ? Number.NaN : Number(args[at + 1]);
+  if (!(value > 0)) throw new Error(`${flow} is a model-tier flow and must set ${flag} in its arguments`);
+  return value;
+}
+
+// The most the sessions may cost and call, from their own caps. A plan over
+// either limit is refused before any session starts.
+export function caps(sessions) {
+  const model = sessions.filter((session) => session.tier === "behavior");
+  const total = (flag) => model.reduce((sum, session) => sum + cap(session.args ?? [], flag, `${session.id}/${session.name}`), 0);
+  const found = { max_usd: Number(total("--max-budget-usd").toFixed(6)), max_turns: total("--max-turns") };
+  if (found.max_usd > BUDGET_USD) throw new Error(`the model tier plans up to $${found.max_usd}, over its budget of $${BUDGET_USD}`);
+  if (found.max_turns > MAX_MODEL_CALLS) throw new Error(`the model tier plans up to ${found.max_turns} model turns, over its limit of ${MAX_MODEL_CALLS}`);
+  return found;
+}
+
+// A session signed in as the person who runs the verifier writes a project
+// directory for its working directory into their real config directory, empty
+// but for a memory folder, even with no session persisted. It is named after
+// a sandbox directory that is thrown away, so nothing else owns it, and it is
+// removed when it holds no file. A session with its own config is left alone.
+const bare = (dir) => readdirSync(dir).every((name) => statSync(join(dir, name)).isDirectory() && bare(join(dir, name)));
+export function forgetProjects(sessions) {
+  for (const session of sessions.filter((each) => each.tier === "behavior" && !each.config)) {
+    const config = session.env.CLAUDE_CONFIG_DIR ?? join(session.env.HOME ?? "", ".claude");
+    const dir = join(config, "projects", session.cwd.replace(/[^A-Za-z0-9]/g, "-"));
+    if (session.cwd.includes("pstack-verify-") && existsSync(dir) && bare(dir)) rmSync(dir, { recursive: true });
+  }
+}
+
+// A run's `project` is the small project its session starts in, laid out in
+// its working directory.
+function lay(cwd, project = {}) {
+  for (const [name, text] of Object.entries(project)) {
+    if (isAbsolute(name) || relative(cwd, join(cwd, name)).startsWith("..")) throw new Error(`a flow file may not leave its working directory: ${name}`);
+    mkdirSync(dirname(join(cwd, name)), { recursive: true });
+    writeFileSync(join(cwd, name), text);
+  }
+}
+
 // The only variables a run may add to its environment are the plugin's own
 // switches. Any other name would let a flow change which sheet or runtime the
 // hook sees, or sign the session in.
@@ -122,22 +200,33 @@ function placeFiles(box, files = {}) {
 // One sandbox per run: two runs at once never share a config directory. A run
 // that names `share` takes the sandbox of an earlier run of its flow, which is
 // how a session is resumed: the conversation it continues is in that
-// directory. Runs that share one are started in the order listed.
-export function plan(flows, base, env = process.env, stage = null) {
-  return flows.flatMap((flow) => {
-    const boxes = new Map();
-    return flow.runs.map((session) => {
-      if (session.share && !boxes.has(session.share)) throw new Error(`${flow.id} ${session.name} shares the sandbox of ${session.share}, which no earlier run of the flow has`);
-      const box = boxes.get(session.share) ?? sandbox(join(base, flow.id, session.name));
-      boxes.set(session.name, box);
-      const added = session.env ?? {};
-      const bad = Object.keys(added).find((name) => !EXTRA_ENV.test(name));
-      if (bad) throw new Error(`${flow.id} ${session.name} may not set ${bad}; only PSTACK_ variables`);
-      const stdin = typeof session.stdin === "function" ? session.stdin({ skills: skillNames(stage) }) : (session.stdin ?? "");
-      const files = placeFiles(box, session.files);
-      return { id: flow.id, ...session, stdin, cwd: box.cwd, config: box.config, env: { ...childEnv(box, env), ...added }, extras: { env: added, files } };
+// directory. Runs that share one are started in the order listed. A run's
+// `env` holds the plugin switches that make up its condition, such as the hook
+// switched off. With no way to sign in, the model tier plans no session, and a
+// model-tier run signed in as the person has no config directory of its own,
+// so it may write no file there.
+export function plan(flows, base, env = process.env, { stage = null, access = { mode: "clean", credential: [] } } = {}) {
+  const sessions = flows
+    .filter((flow) => flow.tier !== "behavior" || access.mode !== "none")
+    .flatMap((flow) => {
+      const boxes = new Map();
+      return flow.runs.map((session) => {
+        if (session.share && !boxes.has(session.share)) throw new Error(`${flow.id} ${session.name} shares the sandbox of ${session.share}, which no earlier run of the flow has`);
+        const box = boxes.get(session.share) ?? sandbox(join(base, flow.id, session.name));
+        boxes.set(session.name, box);
+        const added = session.env ?? {};
+        const bad = Object.keys(added).find((name) => !EXTRA_ENV.test(name));
+        if (bad) throw new Error(`${flow.id} ${session.name} may not set ${bad}; only PSTACK_ variables`);
+        const local = flow.tier === "behavior" && access.mode === "local";
+        if (local && Object.keys(session.files ?? {}).length) throw new Error(`${flow.id} ${session.name} is signed in as the person, whose config directory a flow may not write`);
+        const stdin = typeof session.stdin === "function" ? session.stdin({ skills: skillNames(stage) }) : (session.stdin ?? "");
+        const files = placeFiles(box, session.files);
+        return { id: flow.id, tier: flow.tier, ...session, stdin, cwd: box.cwd, config: local ? null : box.config, env: { ...sessionEnv(box, flow.tier, access, env), ...added }, extras: { env: added, files } };
+      });
     });
-  });
+  caps(sessions);
+  for (const session of sessions) lay(session.cwd, session.project);
+  return sessions;
 }
 
 function executable(path) {

@@ -70,7 +70,9 @@ async function session(run, { cli, plugin, stage, out }) {
   const file = (suffix) => join(dir, `${run.name}${suffix}`);
   writeFileSync(file(".jsonl"), trace);
   writeFileSync(file(".stderr"), Buffer.concat(stderr));
-  const transcript = transcripts(run.config);
+  // A session signed in as the person who runs the verifier has the real
+  // config directory, which holds sessions that are not this run's.
+  const transcript = run.config ? transcripts(run.config) : [];
   if (transcript.length) writeFileSync(file(".transcript.jsonl"), Buffer.concat(transcript));
   const sidecar = {
     argv,
@@ -86,11 +88,13 @@ async function session(run, { cli, plugin, stage, out }) {
   writeFileSync(file(".sidecar.json"), `${JSON.stringify(sidecar, null, 2)}\n`);
 }
 
-// Runs that share a config directory go one after the other, in the order
-// listed: a resumed session needs the conversation the run before it left.
+// Runs that share a sandbox go one after the other, in the order listed: a
+// resumed session needs the conversation the run before it left. A sandbox is
+// told by its working directory, which a model-tier run signed in as the
+// person has of its own even though it has no config directory.
 export async function drive(runs, { cli, stage, plugin, out, jobs = 2 }) {
   const groups = new Map();
-  for (const run of runs) groups.set(run.config, [...(groups.get(run.config) ?? []), run]);
+  for (const run of runs) groups.set(run.cwd, [...(groups.get(run.cwd) ?? []), run]);
   const queue = [...groups.values()];
   const worker = async () => {
     for (let group = queue.shift(); group; group = queue.shift()) {

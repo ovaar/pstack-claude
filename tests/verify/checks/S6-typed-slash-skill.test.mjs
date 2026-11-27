@@ -182,7 +182,7 @@ describe("what a run must have cost", () => {
 test("the flow types one message for each skill directory of the stage, and one for a name it has none of", async () => {
   const flow = (await loadDir(FLOWS_DIR)).find((each) => each.id === "S6");
   const stage = fixtureStage(join(tempDir(), "stage"), S6.tree);
-  const [run] = plan([flow], tempDir(), { PATH: "/usr/bin" }, stage);
+  const [run] = plan([flow], tempDir(), { PATH: "/usr/bin" }, { stage });
   const typed = run.stdin.trimEnd().split("\n").map((line) => JSON.parse(line).message.content);
   const dirs = readdirSync(join(stage, "plugins/pstack/skills")).sort();
   expect(typed).toEqual([...dirs.map((name) => `/pstack:${name}`), "/pstack:does-not-exist"]);

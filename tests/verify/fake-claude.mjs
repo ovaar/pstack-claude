@@ -18,6 +18,13 @@ if (args.includes("--version")) {
   console.log("2.1.332 (stand-in for tests)");
   process.exit(0);
 }
+// `claude auth status`: signed in where the home holds a marker file, which
+// is how a test gives the stand-in a login without a real one.
+if (args[0] === "auth") {
+  const signedIn = existsSync(join(process.env.HOME ?? "", ".stand-in-login"));
+  console.log(JSON.stringify({ loggedIn: signedIn, authMethod: signedIn ? "stand-in" : "none" }));
+  process.exit(signedIn ? 0 : 1);
+}
 const command = args[0] === "plugin";
 const target = args.at(-1);
 const stage = command ? target.replace(/\/plugins\/pstack$/, "") : args[args.indexOf("--plugin-dir") + 1].replace(/\/plugins\/pstack$/, "");
@@ -30,10 +37,13 @@ const run = flow.runs.filter((each) => (each.share ?? each.name) === lead).find(
 const fixtures = join(import.meta.dir, "fixtures");
 const named = (text) => text.replaceAll("<STAGE>", stage).replaceAll("<SANDBOX>", sandbox);
 // The first line says which variables the session had; a recording of the
-// run's transcript, where there is one, follows it.
-const transcripts = join(process.env.CLAUDE_CONFIG_DIR, "projects", "stand-in");
-mkdirSync(transcripts, { recursive: true });
-const recordedTranscript = join(fixtures, `untouched.${check}.${run.name}.transcript.jsonl`);
-writeFileSync(join(transcripts, "session.jsonl"), `${JSON.stringify({ type: "stand-in", env: Object.keys(process.env).sort() })}\n${existsSync(recordedTranscript) ? named(readFileSync(recordedTranscript, "utf8")) : ""}`);
+// run's transcript, where there is one, follows it. A session signed in as a
+// person has no config directory of its own, and leaves none.
+if (process.env.CLAUDE_CONFIG_DIR) {
+  const transcripts = join(process.env.CLAUDE_CONFIG_DIR, "projects", "stand-in");
+  mkdirSync(transcripts, { recursive: true });
+  const recordedTranscript = join(fixtures, `untouched.${check}.${run.name}.transcript.jsonl`);
+  writeFileSync(join(transcripts, "session.jsonl"), `${JSON.stringify({ type: "stand-in", env: Object.keys(process.env).sort() })}\n${existsSync(recordedTranscript) ? named(readFileSync(recordedTranscript, "utf8")) : ""}`);
+}
 
 process.stdout.write(named(readFileSync(join(fixtures, `untouched.${check}.${run.name}.jsonl`), "utf8")));
