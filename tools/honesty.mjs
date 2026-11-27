@@ -3,7 +3,10 @@
 // tree, runs the real verifier on the copy with --tree, and reports for each
 // mistake whether the check that should catch it did.
 //
-//   bun tools/verify.mjs honesty [--tree <checkout>] [--mutants <dir>] [--mutant <id>] [--tier surface|behavior|all] [--out <file>] [--keep]
+//   bun tools/verify.mjs honesty [--tree <checkout>] [--mutants <dir>] [--mutant <id>] [--tier surface|behavior|all] [--out <file>] [--keep] [--base <ref>]
+//
+// With --base <ref> it runs no verifier and compares the committed mistakes and
+// baseline.json with the merge base of HEAD and <ref>; see ratchet.
 //
 // One JSON file per mistake under tools/verify/mutants/:
 //
@@ -35,7 +38,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "..");
 export const MUTANTS_DIR = join(here, "verify", "mutants");
 const VERIFY = join(here, "verify.mjs");
-const USAGE = "usage: bun tools/verify.mjs honesty [--tree <checkout>] [--mutants <dir>] [--mutant <id>] [--tier surface|behavior|all] [--out <file>] [--keep]";
+const USAGE = "usage: bun tools/verify.mjs honesty [--tree <checkout>] [--mutants <dir>] [--mutant <id>] [--tier surface|behavior|all] [--out <file>] [--keep] [--base <ref>]";
 const OPS = { replace: ["path", "find", "with"], write: ["path", "content"], delete: ["path"], chmod: ["path", "mode"] };
 
 export class PlantDidNotApply extends Error {}
@@ -157,7 +160,7 @@ const failing = (run) => run.checks.filter((each) => ["fail", "unobservable"].in
 
 // One mutant: caught, escaped, a known escape that still escapes, or a
 // known escape that something caught after all (the file is out of date).
-function judge(mutant, run) {
+export function judge(mutant, run) {
   if (run.error) return { status: "error", note: run.error };
   const { check, assertion } = mutant.catches ?? {};
   const row = run.checks.find((each) => each.id === check);
@@ -166,9 +169,21 @@ function judge(mutant, run) {
     return hit.length ? { status: "promote", note: `${hit.join(", ")} now fails: blind spot closed, move the file to catches` } : { status: "known-escape", note: `no check fails; ${mutant.known_escape.future_check} is to catch it` };
   }
   if (!row) return { status: "error", note: `the verifier did not run check ${check}` };
-  if (row.verdict !== "fail") return { status: "escaped", note: `${check} ${row.verdict}${failing(run).length ? `, other failures: ${failing(run).join(", ")}` : ""}` };
+  // A check that cannot see the evidence it needs fails the tree in the
+  // verifier's own verdict, as a failed assertion does. That is a catch of a
+  // mistake that stops the evidence from arising, such as a deleted hooks
+  // file. It names no assertion, so a mutant that names one is not caught by it.
+  if (row.verdict === "unobservable" && !assertion) return { status: "caught", note: `${check} unobservable: ${row.reason}` };
+  const others = failing(run).filter((id) => id !== check);
+  if (row.verdict !== "fail") return { status: "escaped", note: `${check} ${row.verdict}${others.length ? `, other failures: ${others.join(", ")}` : ""}` };
   if (assertion && !(row.failed ?? []).includes(`${check}.${assertion}`)) return { status: "escaped", note: `${check} failed on ${(row.failed ?? []).join(", ")} and not on ${check}.${assertion}` };
   return { status: "caught", note: (row.failed ?? []).join(", ") };
+}
+
+// The verifier ran nothing: no check was selected, or the CLI was not there.
+function skipped(control, tier) {
+  if (!control.checks.some((each) => each.selected)) return `the verifier ran no check: no check in the ${tier} tier`;
+  return "the verifier ran no check: no claude CLI";
 }
 
 const FAILS = ["escaped", "promote", "not-applied", "error"];
@@ -185,7 +200,7 @@ export function honesty({ tree = repo, mutants, tier = "surface", only = null, k
     // already fails every planted mistake.
     const base = clone(snap, join(scratch, "control"));
     const control = verify(base, { tier, root: join(scratch, "control-evidence"), env });
-    const controlWord = control.error ?? (control.verdict === "SKIPPED" ? "the verifier ran no check: no claude CLI" : failing(control).length ? `the untouched tree fails ${failing(control).join(", ")}` : null);
+    const controlWord = control.error ?? (control.verdict === "SKIPPED" ? skipped(control, tier) : failing(control).length ? `the untouched tree fails ${failing(control).join(", ")}` : null);
     if (controlWord) return { rows, control: { ok: false, note: controlWord }, verdict: control.verdict, scratch: keep ? scratch : null, exit: 1 };
 
     for (const mutant of named) {
@@ -224,8 +239,59 @@ export function table({ rows, control, verdict, scratch }) {
   return `${lines.join("\n")}\n`;
 }
 
+// The ratchet against a base. A test inside one commit cannot stop that same
+// commit from raising its own baseline, so the committed files are compared
+// with what the base branch holds: the known escapes may only go down, and a
+// mistake the base catches stays caught by the same check.
+const BASELINE = "tools/verify/baseline.json";
+const MUTANTS = "tools/verify/mutants";
+
+function show(dir, ref, path) {
+  const result = spawnSync("git", ["-C", dir, "show", `${ref}:${path}`], { encoding: "utf8", env: gitEnv(), maxBuffer: 1 << 24 });
+  return result.status === 0 ? result.stdout : null;
+}
+
+// What `ref` holds, or null where it holds no baseline yet: the first
+// commit that introduces the ratchet has nothing to be compared with.
+export function atRef(dir, ref) {
+  const baseline = show(dir, ref, BASELINE);
+  if (baseline === null) return null;
+  const listed = spawnSync("git", ["-C", dir, "ls-tree", "--name-only", `${ref}:${MUTANTS}`], { encoding: "utf8", env: gitEnv() });
+  const files = listed.status === 0 ? listed.stdout.split("\n").filter((file) => file.endsWith(".json")) : [];
+  return { baseline: JSON.parse(baseline), mutants: files.map((file) => JSON.parse(show(dir, ref, `${MUTANTS}/${file}`))) };
+}
+
+export function atHead(dir) {
+  return { baseline: JSON.parse(readFileSync(join(dir, BASELINE), "utf8")), mutants: loadMutants(join(dir, MUTANTS)) };
+}
+
+// What the head does that the base does not allow; empty when nothing.
+export function ratchet(base, head) {
+  if (!base) return [];
+  const wrong = [];
+  const escapes = head.mutants.filter((mutant) => mutant.known_escape).length;
+  const was = base.mutants.filter((mutant) => mutant.known_escape).length;
+  if (head.baseline.known_escapes > base.baseline.known_escapes) wrong.push(`baseline.json raises the known escapes from ${base.baseline.known_escapes} to ${head.baseline.known_escapes}`);
+  if (escapes > was) wrong.push(`${escapes} known escapes where the base has ${was}`);
+  for (const old of base.mutants.filter((mutant) => mutant.catches)) {
+    const now = head.mutants.find((mutant) => mutant.id === old.id);
+    if (!now) wrong.push(`${old.id} caught by ${expectation(old)} on the base, and is gone`);
+    else if (!now.catches) wrong.push(`${old.id} caught by ${expectation(old)} on the base, and is now a known escape`);
+    else if (now.catches.check !== old.catches.check || (old.catches.assertion !== undefined && now.catches.assertion !== old.catches.assertion)) wrong.push(`${old.id} expected ${expectation(old)} on the base, and ${expectation(now)} now`);
+  }
+  return wrong;
+}
+
+// The merge base of HEAD and `ref`, so a branch is compared with where it
+// left the base, not with what the base has gained since.
+export function mergeBase(dir, ref) {
+  const result = spawnSync("git", ["-C", dir, "merge-base", "HEAD", ref], { encoding: "utf8", env: gitEnv() });
+  if (result.status !== 0) throw new Error(`no merge base of HEAD and ${ref}: ${result.stderr.trim()}`);
+  return result.stdout.trim();
+}
+
 export function parse(args) {
-  const options = { tree: repo, mutants: MUTANTS_DIR, mutant: null, tier: "surface", out: null, keep: false };
+  const options = { tree: repo, mutants: MUTANTS_DIR, mutant: null, tier: "surface", out: null, base: null, keep: false };
   for (let i = 0; i < args.length; i++) {
     const name = args[i].replace(/^--/, "");
     if (args[i] === "--keep") options.keep = true;
@@ -238,6 +304,11 @@ export function parse(args) {
 
 export function main(args) {
   const options = parse(args);
+  if (options.base) {
+    const wrong = ratchet(atRef(options.tree, mergeBase(options.tree, options.base)), atHead(options.tree));
+    process.stdout.write(wrong.length ? `ratchet: FAIL\n${wrong.map((line) => `- ${line}`).join("\n")}\n` : `ratchet: OK against ${options.base}\n`);
+    return wrong.length ? 1 : 0;
+  }
   const result = honesty({ tree: options.tree, mutants: loadMutants(options.mutants), tier: options.tier, only: options.mutant, keep: options.keep });
   const text = table(result);
   process.stdout.write(text);

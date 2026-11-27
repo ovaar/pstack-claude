@@ -11,7 +11,7 @@
 //   bun tools/verify.mjs [--tier surface|behavior|all] [--flow <id>]
 //                        [--tree <checkout>] [--evidence <dir>] [--jobs 1-3]
 //   bun tools/verify.mjs check <evidence-dir>
-//   bun tools/verify.mjs honesty [--mutant <id>] [--keep]
+//   bun tools/verify.mjs honesty [--mutant <id>] [--keep] [--base <ref>]
 //
 // One file per check: verify/flows/<id>-<name>.mjs says what to run and
 // verify/checks/<id>-<name>.mjs says what must hold. Evidence goes to
@@ -43,7 +43,7 @@ import { buildStage, doctor, evidenceRoot, plan, sandbox, sandboxBase, snapshot 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const USAGE = `usage: bun tools/verify.mjs [--tier ${TIERS.join("|")}|all] [--flow <id>] [--tree <checkout>] [--evidence <dir>] [--jobs 1-3]
        bun tools/verify.mjs check <evidence-dir>
-       bun tools/verify.mjs honesty [--mutant <id>] [--keep]`;
+       bun tools/verify.mjs honesty [--mutant <id>] [--keep] [--base <ref>]`;
 
 class UsageError extends Error {}
 
