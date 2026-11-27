@@ -57,6 +57,18 @@ describe("recorded failures", () => {
   });
 });
 
+describe("a public skill made hidden", () => {
+  // The tree and the session agree about it, as they do when the file is what
+  // changed: the hidden skill is refused, and so only the rule that names the
+  // hidden ones can fail. The recording is the untouched tree's, so the
+  // skill's echo and expansion in it are what also fail.
+  test("a command skill that gained user-invocable: false fails only-leaves-hidden", async () => {
+    const judged = await judge({ stage: (stage) => writeFileSync(join(stage, "plugins/pstack/skills/bro/SKILL.md"), "---\nname: bro\nuser-invocable: false\n---\nText.\n") });
+    expect(judged.failed).toContain("S6.only-leaves-hidden");
+    expect(said(judged, "only-leaves-hidden")).toStartWith("saw hidden from users and no principle-* skill: bro, want ");
+  });
+});
+
 describe("a skill that is not resolved", () => {
   test("a skill with no echo fails resolved alone", async () => {
     const judged = await judge({ S6: { events: (events) => void events.splice(events.indexOf(replayOf(events, "tdd")), 1) } });

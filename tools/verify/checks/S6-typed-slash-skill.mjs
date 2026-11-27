@@ -7,7 +7,9 @@
 // typed, which the transcript records as an unknown command. The three are
 // told apart by structured records, never by what a model said, and every
 // exchange costs nothing. The principle leaves, which a skill reaches for in
-// its own text, must be among the refused. A skill that stopped being resolved turns up as
+// its own text, must be among the refused, and no other skill may be: which
+// skills are open is read from the tree, so a public skill that gained
+// user-invocable: false would otherwise leave the typed list with no failure. A skill that stopped being resolved turns up as
 // passed on, or as missing its transcript line.
 export const title = "a typed slash command is resolved before any model call";
 export const tier = "surface";
@@ -79,6 +81,7 @@ export function assertions({ trace, stage, missing }) {
   const fallbacks = lines.filter((line) => line.attachment === "unknown_command_fallback").length;
   const asked = open.length + closed.length + 1;
   const leaves = tree.map(({ name }) => name).filter((name) => name.startsWith(LEAVES));
+  const strays = closed.filter((name) => !name.startsWith(LEAVES));
   const exposed = leaves.filter((name) => open.includes(name) || resolved.includes(name) || expanded.includes(name));
 
   return [
@@ -95,6 +98,12 @@ export function assertions({ trace, stage, missing }) {
       ok: closed.length > 0 ? refusals.length === closed.length && refusals.every((each) => each.turns === 0 && !each.isError) && closed.every((name) => typedPlain.includes(`/${prefix}${name}`)) : refusals.length === 0,
       saw: `${refusals.length} refusals (turns ${shown([...new Set(refusals.map((each) => each.turns))].map(String))}); ${closed.filter((name) => typedPlain.includes(`/${prefix}${name}`)).length} of ${closed.length} hidden skills typed`,
       want: `${closed.length} refusals with no turn, one for each skill a user cannot invoke, and none of them expanded`,
+    },
+    {
+      id: "only-leaves-hidden",
+      ok: strays.length === 0,
+      saw: strays.length ? `hidden from users and no ${LEAVES}* skill: ${strays.join(", ")}` : `${closed.length} hidden skills, each a ${LEAVES}* skill`,
+      want: `every skill a user cannot invoke is a ${LEAVES}* skill. The open and closed lists are read from the stage, so a command skill made user-hidden would drop out of both unseen`,
     },
     {
       id: "leaves-refused",
