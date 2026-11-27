@@ -4,7 +4,8 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { FIXTURES, leaks, MAX_BYTES, PLACEHOLDER, scrub } from "./scrub.mjs";
+import { MAX_MODEL_CALLS } from "../../tools/verify/paths.mjs";
+import { FIXTURES, leaks, MAX_BYTES, PLACEHOLDER, renumber, scrub } from "./scrub.mjs";
 
 const files = readdirSync(FIXTURES, { recursive: true, withFileTypes: true })
   .filter((entry) => entry.isFile())
@@ -75,9 +76,23 @@ test.each([["somebody else"], ["awesomeone"], ["a fix-someone-else-branch"], ["s
   expect(leaks(`{"text":"${word}"}`, "someone", "build-box")).toEqual([]);
 });
 
-test.each([["user"], ["claude"], ["code"], ["test"], ["root"], ["admin"], ["runner"], ["sandbox"], ["local"], ["ubuntu"]])("the generic word %s is no leak anywhere, and a short name is a generic one", (name) => {
+test.each([["user"], ["claude"], ["code"], ["test"], ["root"], ["admin"], ["runner"], ["sandbox"], ["local"], ["ubuntu"]])("the generic word %s is no leak anywhere", (name) => {
   expect(leaks(`{"text":"the ${name} account ran the ${name.toUpperCase()} ${name}"}`, name, name)).toEqual([]);
-  expect(leaks('{"text":"tom wrote it"}', "tom", "tom")).toEqual([]);
+});
+
+// A short name is no more English than a long one: only the generic words
+// above are let through, so "tom" is found wherever it stands as a word.
+test.each([
+  ["a directory listing", '{"text":"drwxr-xr-x 5 tom  staff 160 .\\n"}'],
+  ["a sentence", '{"text":"Tom wrote it"}'],
+  ["capitals", '{"text":"TOM"}'],
+])("a three-letter user name is a leak in %s", (_, text) => {
+  expect(leaks(text, "tom", "build-box")).toEqual(["the local user name"]);
+  expect(leaks(text, "tom", "build-box", { strict: true })).toEqual(["the local user name"]);
+});
+
+test("a three-letter name inside a longer word is no leak", () => {
+  expect(leaks('{"text":"a tomato and a custom fix-tom-branch"}', "tom", "build-box")).toEqual([]);
 });
 
 // Whoever records knows their own name, so the tool that writes a fixture
@@ -98,6 +113,57 @@ test("every UUID-shaped string must carry the placeholder prefix", () => {
   for (const real of ["ea288b2b-45df-4011-9af1-0ef1efbf16d1", "EA288B2B-45DF-4011-9AF1-0EF1EFBF16D1", "00000000-0000-4000-8001-000000000001"]) {
     expect(leaks(`{"id":"${real}"}`, "someone", "build-box")).toContain("a UUID that is not a placeholder");
   }
+});
+
+// The API's request and message ids and a tool call's id name an account's
+// usage on the server, as do a background agent's and a run's.
+describe("server-side ids", () => {
+  const real = { req: "req_011ChTd9Wv8mQx4kZ2pLrNaB", msg: "msg_011ChTd97m8aA7Vb8ME2c4Tc", toolu: "toolu_01WkT2wgYpQ5mHnXr9cDfBeA" };
+  test.each(Object.entries(real))("a real %s id is a leak, a placeholder one is not", (_, id) => {
+    expect(leaks(`{"id":"${id}"}`, "someone", "build-box")).toContain("a server-side id that is not a placeholder");
+    expect(leaks(`{"id":"${renumber(id)}"}`, "someone", "build-box")).toEqual([]);
+  });
+
+  test.each([["agent_id"], ["task_id"], ["run_id"], ["agentId"]])("a real %s is a leak", (key) => {
+    expect(leaks(`{"${key}":"a6ad5855a5318f41c"}`, "someone", "build-box")).toContain("a server-side id that is not a placeholder");
+    expect(leaks(`{"${key}":"${renumber(`{"${key}":"a6ad5855a5318f41c"}`).match(/:"([^"]+)"/)[1]}"}`, "someone", "build-box")).toEqual([]);
+  });
+
+  test("renumbering keeps what links two events: one id, one placeholder, and a name that is no id is left", () => {
+    const text = `${real.toolu} ${real.msg} ${real.toolu} msg_lifecycle_v1 "agent_id":"a6ad5855a5318f41c" in /tasks/a6ad5855a5318f41c.output`;
+    const out = renumber(text);
+    const [call, message, again] = out.split(" ");
+    expect(call).toBe(again);
+    expect(call).not.toBe(message);
+    expect(out).toContain("msg_lifecycle_v1");
+    expect(out.match(/"agent_id":"(\d+)"/)[1]).toBe(out.match(/tasks\/(\d+)\.output/)[1]);
+    expect(renumber(out)).toBe(out);
+  });
+
+  test("a scrubbed signed-in trace carries none of them", () => {
+    const line = JSON.stringify({ type: "assistant", request_id: real.req, message: { id: real.msg, content: [{ type: "tool_use", id: real.toolu }] }, agent_id: "a6ad5855a5318f41c" });
+    const out = scrub(`${line}\n`, "/s/stage", "/s/sandbox", { home: "/Users/someone", user: "someone", host: "build-box", tmp: [] });
+    expect(leaks(out, "someone", "build-box", { strict: true })).toEqual([]);
+    for (const id of [...Object.values(real), "a6ad5855a5318f41c"]) expect(out).not.toContain(id);
+  });
+
+  test("the committed recordings hold no real one", () => {
+    for (const file of traces) expect(leaks(readFileSync(file, "utf8"))).not.toContain("a server-side id that is not a placeholder");
+  });
+});
+
+// A real run is held to MAX_MODEL_CALLS by the checker. The recordings are
+// one such run, so they must be within it as well.
+test("the recorded model-tier sessions together made no more calls than a run may", () => {
+  const ids = new Set();
+  for (const file of traces.filter((each) => /untouched\.B\d\.attempt-\d\.jsonl$/.test(each))) {
+    const name = file.slice(FIXTURES.length + 1);
+    for (const line of readFileSync(file, "utf8").trimEnd().split("\n")) {
+      const event = JSON.parse(line);
+      if (event.type === "assistant" && event.message?.id) ids.add(`${name}/${event.message.id}`);
+    }
+  }
+  expect(ids.size).toBeLessThanOrEqual(MAX_MODEL_CALLS);
 });
 
 // What a signed-in session leaves in its stream, in the shape the CLI writes.

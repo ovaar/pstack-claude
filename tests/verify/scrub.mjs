@@ -36,10 +36,30 @@ const literal = (name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const standsAlone = (name) => new RegExp(`(?<![A-Za-z0-9-])${literal(name)}(?![A-Za-z0-9-])`, "i");
 
 // The names of accounts that are words in every recording. They count only
-// where they name someone, as redact has it, and a name of three letters or
-// fewer does too, since as a word it is far likelier to be English.
+// where they name someone, as redact has it. Every other name counts as a
+// whole word anywhere, however short: a short list is the only exception.
 const GENERIC = ["user", "claude", "code", "test", "root", "admin", "runner", "sandbox", "local", "ubuntu"];
-const narrow = (name) => GENERIC.includes(name.toLowerCase()) || name.length <= 3;
+const narrow = (name) => GENERIC.includes(name.toLowerCase());
+
+// Server-side ids tie a trace to an account and its usage: the API's request
+// and message ids, a tool call's id, and the ids of a background agent and a
+// run. They are renumbered too, one placeholder per distinct id, so that a
+// result still points at its call and a message id still counts as one call.
+export const ID_ZEROS = "00000000";
+const PREFIXED = /\b(req|msg|toolu)_[A-Za-z0-9]{20,}/g;
+const KEYED = /"(?:agent_id|task_id|run_id|agentId)":"([A-Za-z0-9_-]{8,})"/g;
+const KEYED_REAL = /"(?:agent_id|task_id|run_id|agentId)":"(?!00000000)[A-Za-z0-9_-]{8,}"/;
+const PREFIXED_REAL = /\b(?:req|msg|toolu)_(?!00000000)[A-Za-z0-9]{20,}/;
+
+export function renumber(text) {
+  const seen = new Map();
+  const number = (id, prefix = "") => seen.get(id) ?? seen.set(id, `${prefix}${ID_ZEROS}${String(seen.size + 1).padStart(12, "0")}`).get(id);
+  let out = text.replace(PREFIXED, (id, prefix) => (id.slice(prefix.length + 1).startsWith(ID_ZEROS) ? id : number(id, `${prefix}_`)));
+  // A background agent's id also stands in paths and prose, so every
+  // occurrence of one found under its key is replaced.
+  for (const [, id] of text.matchAll(KEYED)) if (!id.startsWith(ID_ZEROS)) out = out.replaceAll(id, number(id));
+  return out;
+}
 
 const KEEP = 1200;
 const NOISE = ["thinking_tokens", "task_progress"];
@@ -91,6 +111,7 @@ export function scrub(text, stage, sandbox, machine = thisMachine(), names = [])
     // account's numeric id.
     .replace(/\/(?:private\/)?tmp\/claude-\d+\//g, "<TMP>/");
   for (const name of named) out = out.replace(new RegExp(standsAlone(name).source, "gi"), "<name>");
+  out = renumber(out);
   return redact(out, { places: {}, user: machine.user, host: machine.host, tmp: [], home: machine.home });
 }
 
@@ -112,6 +133,7 @@ export function leaks(text, user = thisMachine().user, host = thisMachine().host
   // Any id that is not a placeholder is a real one: a session, an account,
   // an organisation, an event.
   if ((text.match(UUID) ?? []).some((id) => !id.startsWith(PLACEHOLDER))) found.push("a UUID that is not a placeholder");
+  if (PREFIXED_REAL.test(text) || KEYED_REAL.test(text)) found.push("a server-side id that is not a placeholder");
   // What the evidence writer redacts whatever the machine: email addresses,
   // token-shaped strings and home paths.
   if (redact(text, { user: null, host: null, tmp: [] }) !== text) found.push("an email address, a token-shaped string or a home path");
