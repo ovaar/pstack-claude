@@ -4,7 +4,7 @@
 // PASS, so every end-to-end run that reaches the verifier must be blocked;
 // the controls beside them (no watched path, no push, a bypass) must not be.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 
@@ -592,3 +592,13 @@ test.skipIf(process.platform === "win32")("the installed hook stops a push of tw
   // The ref that carries nothing watched goes through the same hook.
   expect(push("good:refs/heads/aa-good").status).toBe(0);
 }, 3 * LONG);
+
+test.skipIf(process.platform === "win32")("install-hook does not wait for a stdin that stays open", async () => {
+  const { repo } = pushable();
+  const child = spawn(process.execPath, [GATE, "install-hook"], { cwd: repo, stdio: ["pipe", "pipe", "pipe"], env: { PATH, HOME: tmp, TMPDIR: tmp } });
+  const code = await new Promise((done) => {
+    const timer = setTimeout(() => (child.kill(), done("waited for stdin")), 5000);
+    child.on("exit", (status) => (clearTimeout(timer), done(status)));
+  });
+  expect(code).toBe(0);
+});

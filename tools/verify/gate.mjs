@@ -464,6 +464,6 @@ async function guarded(argv, env, stdin) {
 
 if (isMain(import.meta.url)) {
   // A terminal has no stdin to read: git and pre-commit pipe or close it.
-  const stdin = process.stdin.isTTY ? "" : readFileSync(0, "utf8");
+  const stdin = process.stdin.isTTY || process.argv[2] === "install-hook" ? "" : readFileSync(0, "utf8");
   process.exit(await guarded(process.argv.slice(2), process.env, stdin));
 }
