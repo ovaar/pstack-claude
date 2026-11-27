@@ -1,7 +1,7 @@
 // Check S1 over its recordings. A doctored trace starts from the untouched
 // recording and changes one fact, and must turn the assertion that guards it.
 import { afterEach, describe, expect, test } from "bun:test";
-import { rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { check } from "../../../tools/verify/check.mjs";
@@ -25,7 +25,7 @@ test("the untouched tree passes, and its row counts what it provides", async () 
   const result = await check(evidence(S1), S1.checks);
   expect(result.checks.find((each) => each.id === "S1")).toMatchObject({ verdict: "pass", failed: [], observations: [] });
   expect(markdown(result).split("\n").find((line) => line.startsWith("| S1 "))).toBe(
-    "| S1 the plugin provides what the tree holds | pass | success true, manifest plugin, no errors; 68 skills, each the tree's; 4 agents, each the tree's; 1 hooks, each the tree's; no command provided; 7 pstack: names in the skills, agents and mandate, each provided; 7 of 7 integrity rules hold |",
+    "| S1 the plugin provides what the tree holds | pass | success true, manifest plugin, no errors; 68 skills, each the tree's; 4 agents, each the tree's; 1 hooks, each the tree's; 68 skills and 4 agents, each in the inventory; no command provided; 7 pstack: names in the skills, agents and mandate, each provided; 7 of 7 integrity rules hold |",
   );
 });
 
@@ -108,7 +108,7 @@ describe("a file deleted from the tree that the tree still names", () => {
       },
       S1: { events: (events) => void (provides(events).agents = provides(events).agents.filter((name) => name !== "pstack:comment-sicko")) },
     });
-    expect(judged.failed).toEqual(["S1.references"]);
+    expect(judged.failed).toEqual(["S1.inventory", "S1.references"]);
     expect(said(judged, "references")).toStartWith("saw named in the tree and not provided: pstack:comment-sicko, want ");
   });
 
@@ -117,7 +117,7 @@ describe("a file deleted from the tree that the tree still names", () => {
       stage: (stage) => rmSync(join(stage, PLUGIN, "skills/poteto-mode"), { recursive: true }),
       S1: { events: (events) => void (provides(events).skills = provides(events).skills.filter((name) => name !== "pstack:poteto-mode")) },
     });
-    expect(judged.failed).toEqual(["S1.references"]);
+    expect(judged.failed).toEqual(["S1.inventory", "S1.references"]);
     expect(said(judged, "references")).toStartWith("saw named in the tree and not provided: pstack:poteto-mode, want ");
   });
 
@@ -126,6 +126,49 @@ describe("a file deleted from the tree that the tree still names", () => {
     expect(judged.failed).toEqual(["S1.references"]);
     expect(said(judged, "references")).toStartWith("saw no pstack: name in the skills, agents or mandate");
   });
+});
+
+// The loader and the stage read the same tree, so a skill that no file names
+// leaves them equal and the references quiet: the inventory is what fails.
+describe("a file deleted from the tree that nothing names", () => {
+  test.each(["bro", "principle-make-operations-idempotent"])("the skill %s fails inventory alone", async (skill) => {
+    const judged = await judge({
+      stage: (stage) => rmSync(join(stage, PLUGIN, "skills", skill), { recursive: true }),
+      S1: { events: (events) => void (provides(events).skills = provides(events).skills.filter((name) => name !== `pstack:${skill}`)) },
+    });
+    expect(judged.failed).toEqual(["S1.inventory"]);
+    expect(said(judged, "inventory")).toStartWith(`saw skills: in the inventory and not the tree: pstack:${skill}; in the tree and not the inventory: none; agents: `);
+  });
+
+  test("an agent nothing dispatches to fails inventory alone", async () => {
+    const judged = await judge({
+      stage: (stage) => rmSync(join(stage, PLUGIN, "agents/thermo-nuclear-review-subagent.md")),
+      S1: { events: (events) => void (provides(events).agents = provides(events).agents.filter((name) => name !== "pstack:thermo-nuclear-review-subagent")) },
+    });
+    expect(judged.failed).toEqual(["S1.inventory"]);
+  });
+
+  test("a skill added without a line in the inventory fails inventory alone", async () => {
+    const judged = await judge({
+      stage: (stage) => {
+        mkdirSync(join(stage, PLUGIN, "skills/new-skill"));
+        writeFileSync(join(stage, PLUGIN, "skills/new-skill/SKILL.md"), "---\nname: new-skill\n---\n");
+      },
+      S1: { events: (events) => void provides(events).skills.push("pstack:new-skill") },
+    });
+    expect(judged.failed).toEqual(["S1.inventory"]);
+    expect(said(judged, "inventory")).toContain("in the tree and not the inventory: pstack:new-skill");
+  });
+});
+
+// The inventory is hand-written, so the real tree is held to it here, where
+// a change to either side gets a plain failure.
+test("the inventory in the check file is the plugin directory this checkout holds", async () => {
+  const names = (dir, keep) => readdirSync(join(import.meta.dir, "../../..", PLUGIN, dir)).filter(keep).map((file) => file.replace(/\.md$/, "")).sort();
+  const checkFile = readFileSync(join(import.meta.dir, "../../../tools/verify/checks/S1-inventory.mjs"), "utf8");
+  const listed = (name) => [...checkFile.match(new RegExp(`const ${name} = \\[([^\\]]*)\\]`))[1].matchAll(/"([^"]+)"/g)].map((each) => each[1]);
+  expect(listed("SKILLS")).toEqual(names("skills", (dir) => existsSync(join(import.meta.dir, "../../..", PLUGIN, "skills", dir, "SKILL.md"))));
+  expect(listed("AGENTS")).toEqual(names("agents", (file) => file.endsWith(".md")));
 });
 
 test("a trace without the validator's document fails document", async () => {

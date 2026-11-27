@@ -6,12 +6,43 @@
 // file beside a skill shows twice in the slash menu. A skill or agent deleted
 // from the tree leaves the lists equal, so the stage's own references are
 // held to the list as well: each pstack: name that a skill, an agent or the
-// mandate mentions must be one the loader provides. S2 reads the skills from
+// mandate mentions must be one the loader provides, and the tree itself to an
+// inventory written in this file, which catches the ones nothing names. S2 reads the skills from
 // the session's init event, which leaves out the ones a user cannot invoke and
 // the agents; this reads the loader's list.
 export const title = "the plugin provides what the tree holds";
 export const tier = "surface";
 export const commands = { validate: ["plugin", "validate", "--json", "<plugin>"] };
+
+// What the tree is meant to hold, written out. The loader's list and the
+// stage's directories are read from the same tree, so a skill or agent deleted
+// from it leaves them equal, and the references below catch only the ones some
+// file names. A deletion is made on purpose, and this is where it shows: a
+// skill or agent added or removed changes these lists in the same commit.
+const SKILLS = [
+  "architect", "arena", "automate-me", "babysit", "benchmark-checklist", "blast-radius", "bro", "correct",
+  "create-formal-verification-skill", "create-verification-skill", "deslop", "figure-it-out", "fix-ci",
+  "fix-merge-conflicts", "get-pr-comments", "how", "in-your-own-words", "interrogate", "ketchup",
+  "ketchup-video", "maintain-formal-verification-skill", "maintain-verification-skill",
+  "make-pr-easy-to-review", "no-comments", "poteto-help", "poteto-mode", "principle-attack-the-premise",
+  "principle-boundary-discipline", "principle-build-the-lever", "principle-encode-lessons-in-structure",
+  "principle-exhaust-the-design-space", "principle-experience-first", "principle-explain-the-number",
+  "principle-fix-root-causes", "principle-foundational-thinking", "principle-guard-the-context-window",
+  "principle-laziness-protocol", "principle-make-operations-idempotent",
+  "principle-migrate-callers-then-delete-legacy-apis", "principle-minimize-reader-load",
+  "principle-model-the-domain", "principle-never-block-on-the-human", "principle-outcome-oriented-execution",
+  "principle-prove-it-works", "principle-redesign-from-first-principles",
+  "principle-separate-before-serializing-shared-state", "principle-sequence-verifiable-units",
+  "principle-subtract-before-you-add", "principle-test-behavior-not-implementation",
+  "principle-type-system-discipline", "recall", "reflect", "reframe", "setup-pstack", "sharpen",
+  "show-me-your-work", "statechart", "swarm", "tdd", "teach", "technical-writing",
+  "thermo-nuclear-code-quality-review", "thermo-nuclear-review", "thermos", "typescript-best-practices",
+  "unslop", "what-did-i-get-done", "why",
+];
+const AGENTS = [
+  "comment-sicko", "poteto-agent", "thermo-nuclear-code-quality-review-subagent",
+  "thermo-nuclear-review-subagent",
+];
 
 const PLUGIN = "plugins/pstack";
 const MANDATE = `${PLUGIN}/hooks/session-start-context.md`;
@@ -34,6 +65,7 @@ function frontmatterName(markdown) {
 const flatten = (hooks) =>
   Object.entries(hooks?.hooks ?? {}).flatMap(([event, entries]) => (entries ?? []).flatMap((entry) => (entry.hooks ?? []).map((hook) => `${event} | ${entry.matcher ?? ""} | ${hook.type} | ${hook.command}`)));
 
+const difference = (want, seen) => ({ lacking: want.filter((each) => !seen.includes(each)), extra: seen.filter((each) => !want.includes(each)) });
 const shown = (names) => (names.length ? names.join(", ") : "none");
 
 function compare(id, what, seen, held) {
@@ -45,6 +77,20 @@ function compare(id, what, seen, held) {
     ok: !missing.length && !extra.length && !repeated.length && seen.length === held.length,
     saw: missing.length || extra.length || repeated.length ? `${what}: ${seen.length} provided, ${held.length} in the tree; provided by no file: ${shown(extra)}; in the tree and not provided: ${shown(missing)}; listed twice: ${shown(repeated)}` : `${seen.length} ${what}, each the tree's`,
     want: `the ${what} of the tree, each once`,
+  };
+}
+
+// The tree against the inventory above, as the loader would list them.
+function inventory(name, skillDirs, agents) {
+  const skills = difference(SKILLS.map((each) => `${name}:${each}`), skillDirs.map((dir) => `${name}:${dir}`));
+  const held = difference(AGENTS.map((each) => `${name}:${each}`), agents);
+  const ok = ![skills, held].some((each) => each.lacking.length || each.extra.length);
+  const part = (what, { lacking, extra }) => `${what}: in the inventory and not the tree: ${shown(lacking)}; in the tree and not the inventory: ${shown(extra)}`;
+  return {
+    id: "inventory",
+    ok,
+    saw: ok ? `${skillDirs.length} skills and ${agents.length} agents, each in the inventory` : `${part("skills", skills)}; ${part("agents", held)}`,
+    want: `the ${SKILLS.length} skills and ${AGENTS.length} agents the inventory in the check file lists; a deliberate change edits that list`,
   };
 }
 
@@ -79,6 +125,7 @@ export function assertions({ trace, stage, missing }) {
     compare("skills", "skills", provides.skills ?? [], skills),
     compare("agents", "agents", provides.agents ?? [], agents),
     compare("hooks", "hooks", loaded, hooks),
+    inventory(name, skillDirs, agents),
     {
       id: "no-commands",
       ok: commands.length === 0,
