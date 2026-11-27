@@ -64,7 +64,7 @@ test("a skill whose frontmatter cannot be read is expected in init.skills", asyn
   const judged = await judge({
     stage: (stage) => {
       mkdirSync(join(stage, SKILLS, "unreadable"));
-      writeFileSync(join(stage, SKILLS, "unreadable/SKILL.md"), "user-invocable: false\nno frontmatter fence\n");
+      writeFileSync(join(stage, SKILLS, "unreadable/SKILL.md"), "# No frontmatter\n\n---\nuser-invocable: false\n---\n");
     },
   });
   expect(judged.failed).toEqual(["S2.skills"]);

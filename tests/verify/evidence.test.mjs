@@ -96,6 +96,8 @@ describe("redaction", () => {
     const places = { "/srv/people/ada/repo/.git/pstack-verify/runs/r1/stage": "<stage>", "/private/var/folders/ab/cd/T/pstack-verify-x1": "<sandbox>" };
     const text = "sh: /srv/people/ada/repo/.git/pstack-verify/runs/r1/stage/plugins/pstack/hooks/x.sh in /private/var/folders/ab/cd/T/pstack-verify-x1/S3/startup/cwd, log /var/folders/ab/cd/T/other.log";
     expect(redact(text, { ...nobody, places })).toBe("sh: <stage>/plugins/pstack/hooks/x.sh in <sandbox>/S3/startup/cwd, log <tmp>/other.log");
+    expect(redact("the stage is /srv/people/ada/repo/.git/pstack-verify/runs/r1/stage.", { ...nobody, places })).toBe("the stage is <stage>.");
+    expect(redact("/tmpfs/x and /tmp/x and /tmp", { ...nobody, tmp: ["/tmp"] })).toBe("/tmpfs/x and <tmp>/x and <tmp>");
   });
 
   // A session directory under a temp directory carries the home path with

@@ -36,8 +36,9 @@ export function thisMachine() {
 export function redact(text, { places = {}, ...who } = {}) {
   const { home, user, host, tmp } = { ...thisMachine(), ...who };
   const exact = [...Object.entries(places), ...tmp.map((dir) => [dir, "<tmp>"]), [home, "~"]].filter(([path]) => path.length > 1);
-  // Longest first, so a stage inside the home directory is named as the stage.
-  let out = exact.sort(([a], [b]) => b.length - a.length).reduce((rest, [path, name]) => rest.replaceAll(path, name), text);
+  // Longest first, so a stage inside the home directory is named as the
+  // stage. Whole names only: /tmp is not the start of /tmpfs.
+  let out = exact.sort(([a], [b]) => b.length - a.length).reduce((rest, [path, name]) => rest.replace(new RegExp(`${literal(path)}(?![A-Za-z0-9_-])`, "g"), name), text);
   out = out.replace(HOME_PATH, "~").replace(HOME_SLUG, "-~").replace(EMAIL, "<email>").replace(TOKEN, "<token>");
   if (user) out = out.replace(asUser(user), "<user>");
   if (host) out = out.replace(asHost(host), "<host>");

@@ -136,6 +136,18 @@ test("without a CLI the run is skipped, and fails where a CLI is required or was
   expect(first({ PSTACK_VERIFY_CLAUDE: join(tmp, "no-such-claude") })).toEqual([1, "FAIL surface: PSTACK_VERIFY_CLAUDE does not name an executable | behavior NOT BUILT | round 1"]);
 }, LONG);
 
+test("a tree with nothing to verify fails before anything runs, and leaves no run behind", () => {
+  const repo = tempDir();
+  writeFileSync(join(repo, "README.md"), "no product here\n");
+  commitAll(repo, "empty");
+  const root = tempDir();
+  const run = verify(["--tree", repo, "--evidence", root]);
+  expect([run.status, run.stdout]).toEqual([1, ""]);
+  expect(run.stderr).toStartWith(`FAIL: ${repo} holds none of plugins/pstack, .claude-plugin, VERSION`);
+  expect(readdirSync(join(root, "runs"))).toEqual([]);
+  expect(readdirSync(tmp)).toEqual([]);
+}, LONG);
+
 // One symlink is all it would take to put the stand-in in the CLI's place.
 test.skipIf(process.platform === "win32")("the stand-in found on PATH under the name claude is still a stand-in", () => {
   const bin = tempDir();

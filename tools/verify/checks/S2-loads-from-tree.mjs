@@ -11,7 +11,7 @@ export const args = { context: ["/context"] };
 
 const SKILLS = "plugins/pstack/skills";
 // init.skills leaves these out whether they loaded or not.
-const hidden = (skill) => /^user-invocable:\s*false\s*$/im.test(skill.split(/^---\s*$/m)[1] ?? "");
+const hidden = (skill) => /^user-invocable:\s*false\s*$/im.test(skill.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "");
 
 export function assertions({ trace, stage, missing }) {
   const init = trace("context").init() ?? missing("the init event");
