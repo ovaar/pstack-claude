@@ -137,8 +137,8 @@ The `open-pstack` installer in `installer/` is versioned with the rest: the gene
 ## Bugs that reached a release
 
 A bug that shipped in a release gets an entry in `tools/verify/escapes.json` in the same pull request as its fix.
-The entry names the `CHANGES.md` version it escaped in, a one-line description, and the verifier check id or the test file that now fails on it.
-`tests/verify/escapes.test.mjs` fails on an entry whose version, check or test does not exist, so the fix is not done until something fails on the bug.
+The entry names the `CHANGES.md` version it escaped in, a one-line description, and the verifier check id or the test file that should now fail on it.
+`tests/verify/escapes.test.mjs` fails on an entry whose version, check or test does not exist. It cannot judge that the named check or test fails on the bug, so the reviewer confirms that.
 
 ## Reporting bugs
 

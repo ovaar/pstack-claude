@@ -97,4 +97,18 @@ describe("the repository's map", () => {
     const ids = listDir(CHECKS_DIR).map((check) => check.id);
     expect(mapProblems(map, productFiles(), ids)).toEqual([]);
   });
+
+  test("a new file in a folder the map lists by name is unmapped", () => {
+    const map = JSON.parse(readFileSync(MAP, "utf8"));
+    const ids = listDir(CHECKS_DIR).map((check) => check.id);
+    for (const file of ["plugins/pstack/hooks/pre-commit-claude.sh", "plugins/pstack/.claude-plugin/extra.json"]) {
+      expect(mapProblems(map, [...productFiles(), file], ids)).toEqual([expect.stringContaining(`${file} matches no entry`)]);
+    }
+  });
+
+  test("hooks.json is judged for its SessionStart registration only, and says so", () => {
+    const map = JSON.parse(readFileSync(MAP, "utf8"));
+    const note = map.uncovered.find((entry) => entry.globs.includes("plugins/pstack/hooks/hooks.json"));
+    expect(note?.reason).toMatch(/other than SessionStart/);
+  });
 });

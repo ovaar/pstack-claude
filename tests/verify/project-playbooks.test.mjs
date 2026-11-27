@@ -6,7 +6,7 @@
 // fails with the checker's own lines.
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -30,4 +30,18 @@ test("the checker's command line passes at the repository root", () => {
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+test("the verifier-loop playbook exists and extends the five playbooks it anchors on", () => {
+  const file = join(repo, ".agents/playbooks/verifier-loop.md");
+  expect(existsSync(file)).toBe(true);
+  const extend = /^extends:[ \t]*(.*)$/m.exec(readFileSync(file, "utf8"))?.[1] ?? "";
+  const stems = extend.split(",").map((stem) => stem.trim()).sort();
+  expect(stems).toEqual(["authoring-a-skill", "bug-fix", "feature", "opening-a-pr", "refactoring"]);
+});
+
+test("the verify skill exists and is named verify", () => {
+  const file = join(repo, ".claude/skills/verify/SKILL.md");
+  expect(existsSync(file)).toBe(true);
+  expect(/^name:[ \t]*verify[ \t]*$/m.test(readFileSync(file, "utf8"))).toBe(true);
 });

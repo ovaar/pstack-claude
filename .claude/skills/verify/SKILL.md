@@ -54,7 +54,7 @@ Only PASS counts. A PASS on a partial run is PARTIAL, never PASS.
 - Covered: run the named checks, and expect them to fail if you break the feature.
 - Uncovered: the verifier cannot see a regression there. Say so in the PR and test it another way.
 
-`tests/verify/feature-map.test.mjs` fails when a watched path matches no entry, when an entry names a check that does not exist, and when a glob matches nothing. Adding a check means a flow file, a check file and a map entry.
+`tests/verify/feature-map.test.mjs` fails when a staged product path matches no entry, when an entry names a check that does not exist, and when a glob matches nothing. Adding a check means a flow file, a check file and a map entry.
 
 ## Escaped bugs
 

@@ -2,36 +2,78 @@
   "covered": [
     {
       "feature": "The plugin manifest loads, at the version in VERSION",
-      "globs": ["plugins/pstack/.claude-plugin/plugin.json", "VERSION"],
-      "checks": ["S2", "S3"]
+      "globs": [
+        "plugins/pstack/.claude-plugin/plugin.json",
+        "VERSION"
+      ],
+      "checks": [
+        "S2",
+        "S3"
+      ]
     },
     {
       "feature": "Every user-invocable skill reaches the session, and no skill is missing from it",
-      "globs": ["plugins/pstack/skills/*/SKILL.md"],
-      "checks": ["S2"]
+      "globs": [
+        "plugins/pstack/skills/*/SKILL.md"
+      ],
+      "checks": [
+        "S2"
+      ]
     },
     {
-      "feature": "The routing mandate arrives once at session start",
+      "feature": "The routing mandate arrives once at session start (the SessionStart registration in hooks.json only)",
       "globs": [
         "plugins/pstack/hooks/hooks.json",
         "plugins/pstack/hooks/session-start.sh",
         "plugins/pstack/hooks/session-start-context.md"
       ],
-      "checks": ["S3"]
+      "checks": [
+        "S3"
+      ]
     }
   ],
   "uncovered": [
     {
-      "globs": ["plugins/pstack/skills/**"],
+      "globs": [
+        "plugins/pstack/skills/**"
+      ],
       "reason": "Only each skill's SKILL.md is judged, and only as present in init. Skill bodies, references, scripts and playbooks are not driven."
     },
     {
-      "globs": ["plugins/pstack/agents/**"],
+      "globs": [
+        "plugins/pstack/agents/**"
+      ],
       "reason": "No check dispatches a plugin agent or reads its frontmatter."
     },
     {
-      "globs": ["plugins/pstack/hooks/**"],
-      "reason": "The session-start hook is covered above. The rest of the folder is the other runtimes' hooks, or the PreToolUse script, which the Claude Code build does not register."
+      "globs": [
+        "plugins/pstack/hooks/agy-context.awk",
+        "plugins/pstack/hooks/codex-hooks.json",
+        "plugins/pstack/hooks/copilot-context.awk",
+        "plugins/pstack/hooks/copilot-hooks.json",
+        "plugins/pstack/hooks/json.awk",
+        "plugins/pstack/hooks/kimi-instructions.md",
+        "plugins/pstack/hooks/muse-context.awk",
+        "plugins/pstack/hooks/pre-tool-use.awk",
+        "plugins/pstack/hooks/pre-tool-use.sh",
+        "plugins/pstack/hooks/script-contracts.awk",
+        "plugins/pstack/hooks/session-start-agy.md",
+        "plugins/pstack/hooks/session-start-copilot-setup.md",
+        "plugins/pstack/hooks/session-start-copilot-sheet.md",
+        "plugins/pstack/hooks/session-start-copilot.md",
+        "plugins/pstack/hooks/session-start-minimax.md",
+        "plugins/pstack/hooks/session-start-muse-sheet.md",
+        "plugins/pstack/hooks/session-start-muse.md",
+        "plugins/pstack/hooks/session-start-opencode.md",
+        "plugins/pstack/hooks/session-start.ps1"
+      ],
+      "reason": "The other runtimes' hook files, and the PreToolUse script, which the Claude Code build does not register. A new file in this folder is unmapped until it is listed here or covered."
+    },
+    {
+      "globs": [
+        "plugins/pstack/hooks/hooks.json"
+      ],
+      "reason": "Only its SessionStart registration is judged, by S3. Hook events other than SessionStart in this file are not judged."
     },
     {
       "globs": [
@@ -49,7 +91,10 @@
       "reason": "Another runtime's build. This verifier drives Claude Code only."
     },
     {
-      "globs": ["plugins/pstack/.claude-plugin/icon.png", "plugins/pstack/assets/**"],
+      "globs": [
+        "plugins/pstack/.claude-plugin/icon.png",
+        "plugins/pstack/assets/**"
+      ],
       "reason": "Images. No check opens them."
     },
     {
@@ -62,7 +107,9 @@
       "reason": "Read by the generator or by people. The generator's own check and the test suite cover the stamps."
     },
     {
-      "globs": [".claude-plugin/**"],
+      "globs": [
+        ".claude-plugin/**"
+      ],
       "reason": "The marketplace listing. No check installs through a marketplace yet."
     }
   ]
