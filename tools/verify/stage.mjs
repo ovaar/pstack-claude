@@ -8,6 +8,12 @@ import { join } from "node:path";
 
 export const sha256 = (data) => createHash("sha256").update(data).digest("hex");
 
+// The files a flow may put in a run's config directory. The CLI reads a
+// settings.json there, with an env block and hooks, and a credentials file:
+// either would give a run what the PSTACK_-only rule on variables keeps out.
+// Setup refuses any other name and the checker holds a check file to the same.
+export const SESSION_FILES = ["pstack-models.md"];
+
 function walk(dir, prefix = "") {
   return readdirSync(dir, { withFileTypes: true })
     .sort((a, b) => (a.name < b.name ? -1 : 1))

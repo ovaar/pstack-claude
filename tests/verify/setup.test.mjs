@@ -213,6 +213,17 @@ describe("a session's environment", () => {
     expect(() => plan(flow({ files: { "/tmp/outside.md": "x" } }), tempDir(), parent)).toThrow("only inside the config directory");
   });
 
+  // settings.json in the config directory carries an env block and hooks, and
+  // the CLI applies both to the session: a file is a way round the variable rule.
+  test("a run may write the sheet and no other file, so settings and credentials stay out", () => {
+    const flow = (name) => [{ id: "S5", runs: [{ name: "x", args: [], stdin: "", files: { [name]: "{}" } }] }];
+    for (const name of ["settings.json", "settings.local.json", ".credentials.json", "sub/pstack-models.md"]) {
+      const base = tempDir();
+      expect(() => plan(flow(name), base, parent)).toThrow(`may write only pstack-models.md in the config directory, not ${name}`);
+      expect(existsSync(join(base, "S5/x/config", name))).toBe(false);
+    }
+  });
+
   test("a run that shares takes the sandbox of an earlier run of its flow, and none else", () => {
     const base = tempDir();
     const flows = [{ id: "S4", runs: [{ name: "clear", args: [], stdin: "" }, { name: "resume", share: "clear", args: [], stdin: "" }, { name: "apart", args: [], stdin: "" }] }];

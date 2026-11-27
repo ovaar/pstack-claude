@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import { PLUGIN } from "../plugin.mjs";
 import { CHECKS_DIR, loadDir } from "./paths.mjs";
-import { sha256, stageHash, stageSeal } from "./stage.mjs";
+import { SESSION_FILES, sha256, stageHash, stageSeal } from "./stage.mjs";
 import { readRun, runNames } from "./trace.mjs";
 
 const PIN = JSON.parse(readFileSync(new URL("./cli-pin.json", import.meta.url), "utf8"));
@@ -115,12 +115,13 @@ function integrity(run, check, setup, stage) {
   const allowed = [...BASE_ENV, ...Object.keys(env)];
   const stray = (run.env ?? []).filter((name) => !allowed.includes(name));
   const lacking = [...REQUIRED_ENV, ...Object.keys(env)].filter((name) => !(run.env ?? []).includes(name));
+  const foreign = Object.keys(files).filter((name) => !SESSION_FILES.includes(name));
   const recorded = Boolean(planned) && entries(planned.env) === entries(env) && entries(planned.files) === entries(files);
   rule(
     "extras",
-    recorded && run.env !== null && !stray.length && !lacking.length,
-    !planned ? "no record in setup of this run" : run.env === null ? "no environment in the sidecar" : `setup recorded ${entries(planned.env)} and ${entries(planned.files)}; the session had ${run.env.join(", ")}${stray.length ? `, of which ${stray.join(", ")} are no variable of a session` : ""}`,
-    `exactly the variables ${entries(env)} and the files ${entries(files)} the check declares, on top of ${BASE_ENV.join(", ")}`,
+    recorded && run.env !== null && !stray.length && !lacking.length && !foreign.length,
+    foreign.length ? `the check declares ${foreign.join(", ")}, which no run may write` : !planned ? "no record in setup of this run" : run.env === null ? "no environment in the sidecar" : `setup recorded ${entries(planned.env)} and ${entries(planned.files)}; the session had ${run.env.join(", ")}${stray.length ? `, of which ${stray.join(", ")} are no variable of a session` : ""}`,
+    `exactly the variables ${entries(env)} and the files ${entries(files)} the check declares, on top of ${BASE_ENV.join(", ")}; the only file a run may write is ${SESSION_FILES.join(", ")}`,
   );
 
   if (command) {

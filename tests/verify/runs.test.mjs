@@ -3,10 +3,11 @@
 // variables and the files its check declares. Judged by the two checks under
 // engine-runs/, not by a shipped one.
 import { afterEach, describe, expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { check } from "../../tools/verify/check.mjs";
-import { cleanup, evidence } from "./harness.mjs";
+import { cleanup, evidence, tempDir } from "./harness.mjs";
 
 afterEach(cleanup);
 
@@ -89,5 +90,17 @@ describe("what a run adds to its sandbox", () => {
   test("a switch that setup did not record fails extras alone", async () => {
     const judged = await judge({ setup: (setup) => ({ sessions: setup.sessions.map((session) => ({ ...session, env: {} })) }) });
     expect(failed(judged)).toEqual(["E4.startup.extras"]);
+  });
+
+  // A check file that declares settings.json would have a flow write it, and
+  // the CLI would apply its env block to the session whatever the variable rule says.
+  test("a check that declares a file other than the sheet fails extras, even when setup recorded it", async () => {
+    const checks = tempDir();
+    const body = 'export const title = "a session with a settings file";\nexport const tier = "surface";\nexport const args = { startup: ["--input-format", "stream-json"] };\nexport const files = { startup: { "settings.json": "{}" } };\nexport function assertions() {\n  return [{ id: "ran", ok: true, saw: "x", want: "x" }];\n}\n';
+    writeFileSync(join(checks, "E5-session-with-settings.mjs"), body);
+    const runs = { checks, runs: [{ check: "E5", name: "startup", args: INPUT, files: { "settings.json": "{}" }, fixture: "untouched.S3.startup" }] };
+    const judged = await check(evidence(runs), checks);
+    expect(failed(judged)).toEqual(["E5.startup.extras"]);
+    expect(said(judged, "E5.startup.extras")).toStartWith("saw the check declares settings.json, which no run may write");
   });
 });

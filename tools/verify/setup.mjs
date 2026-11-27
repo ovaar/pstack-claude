@@ -13,7 +13,7 @@ import { delimiter, dirname, isAbsolute, join, relative } from "node:path";
 
 import { SKILLS } from "../plugin.mjs";
 import { PRODUCT, WATCHED } from "./paths.mjs";
-import { sha256, stageHash, stageSeal } from "./stage.mjs";
+import { SESSION_FILES, sha256, stageHash, stageSeal } from "./stage.mjs";
 
 const PIN = JSON.parse(readFileSync(new URL("./cli-pin.json", import.meta.url), "utf8"));
 
@@ -101,8 +101,8 @@ export function skillNames(stage) {
   return existsSync(dir) ? readdirSync(dir).filter((name) => existsSync(join(dir, name, "SKILL.md"))).sort() : [];
 }
 
-// Files a run needs in its config directory, such as the sheet of model
-// overrides. The path stays inside that directory, and setup records the
+// Files a run needs in its config directory: the sheet of model overrides, and
+// no other name (SESSION_FILES). The path stays inside that directory, and setup records the
 // digest of what it wrote so the checker can tell it was the declared text.
 function placeFiles(box, files = {}) {
   return Object.fromEntries(
@@ -111,6 +111,7 @@ function placeFiles(box, files = {}) {
       .map(([name, text]) => {
         const path = join(box.config, name);
         if (isAbsolute(name) || relative(box.config, path).startsWith("..")) throw new Error(`a flow may write only inside the config directory, not ${name}`);
+        if (!SESSION_FILES.includes(name)) throw new Error(`a flow may write only ${SESSION_FILES.join(", ")} in the config directory, not ${name}`);
         mkdirSync(dirname(path), { recursive: true });
         writeFileSync(path, text);
         return [name, sha256(text)];
