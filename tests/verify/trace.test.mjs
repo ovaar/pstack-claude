@@ -101,8 +101,9 @@ test("tool uses, tool results, user events and replays come out as structured re
 test("no accessor returns what a model wrote", () => {
   const trace = readTrace(modelRun, `${JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: CLAIM }] } })}\n`);
   expect(() => trace.resultText()).toThrow("the result text is offered only for a trace that cost nothing and called no model");
+  expect(() => trace.exchanges()).toThrow("the exchanges are offered only for a trace that cost nothing and called no model");
   const offered = Object.entries(trace)
-    .filter(([name, value]) => typeof value === "function" && name !== "resultText")
+    .filter(([name, value]) => typeof value === "function" && !["resultText", "exchanges"].includes(name))
     .map(([, accessor]) => accessor());
   expect(offered.length).toBeGreaterThanOrEqual(9);
   expect(JSON.stringify(offered)).not.toContain(CLAIM);
@@ -111,6 +112,30 @@ test("no accessor returns what a model wrote", () => {
 test("a billed model with a cost of 0 still closes the result text", () => {
   const free = stream({ type: "result", total_cost_usd: 0, modelUsage: { "claude-haiku-5-5": {} }, result: CLAIM });
   expect(() => readTrace(free).resultText()).toThrow();
+  expect(() => readTrace(free).exchanges()).toThrow();
+});
+
+// One message typed per line of stdin, so a result ends each. The replay is
+// the user event the CLI wrote for a message it expanded or passed on; a
+// message it refused has none.
+test("each typed message comes out with its replay and the result that ended it", () => {
+  const replay = (text) => ({ type: "user", isReplay: true, message: { role: "user", content: text } });
+  const result = (text, turns) => ({ type: "result", subtype: "success", total_cost_usd: 0, num_turns: turns, is_error: false, modelUsage: {}, result: text });
+  const trace = readTrace(
+    stream(replay("<command-name>/pstack:bro</command-name>"), result("Not logged in", 1), result("This skill can only be invoked by Claude, not directly by users.", 0), replay("/pstack:nope"), result("Not logged in", 1)),
+  );
+  expect(trace.exchanges()).toEqual([
+    { replay: "<command-name>/pstack:bro</command-name>", resultText: "Not logged in", turns: 1, costUsd: 0, isError: false },
+    { replay: null, resultText: "This skill can only be invoked by Claude, not directly by users.", turns: 0, costUsd: 0, isError: false },
+    { replay: "/pstack:nope", resultText: "Not logged in", turns: 1, costUsd: 0, isError: false },
+  ]);
+});
+
+test("a subcommand's output is one JSON document, and a stream of events is none", () => {
+  expect(readTrace(JSON.stringify({ success: true }, null, 2)).document()).toEqual({ success: true });
+  expect(readTrace("not json\n").document()).toBeNull();
+  expect(readTrace("[1]").document()).toBeNull();
+  expect(readTrace(stream({ type: "system" }, { type: "result" })).document()).toBeNull();
 });
 
 test("transcript lines carry the hook's duration, and text for user lines only", () => {
@@ -141,13 +166,14 @@ test("a run is read without its exit code, and with how it ended", () => {
   const dir = tempDir();
   writeFileSync(join(dir, "context.jsonl"), stream({ type: "system", subtype: "init" }));
   writeFileSync(join(dir, "context.stderr"), "error: unknown option '--plugin-dir'\nsecond line\n");
-  writeFileSync(join(dir, "context.sidecar.json"), JSON.stringify({ argv: ["claude", "-p"], exit_code: 1, signal: "SIGKILL", timed_out: true, spawn_error: null, trace_sha256: "abc" }));
+  writeFileSync(join(dir, "context.sidecar.json"), JSON.stringify({ argv: ["claude", "-p"], env: ["HOME", "PATH"], exit_code: 1, signal: "SIGKILL", timed_out: true, spawn_error: null, trace_sha256: "abc" }));
   const { trace, ...run } = readRun(dir, "context");
   expect(run).toEqual({
     name: "context",
     sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
     recordedSha256: "abc",
     argv: ["claude", "-p"],
+    env: ["HOME", "PATH"],
     ended: { stderr: "error: unknown option '--plugin-dir'", timedOut: true, spawnError: null },
   });
   expect(trace.init()).not.toBeNull();

@@ -92,8 +92,39 @@ export function readTrace(stream, transcript = "") {
       .filter((event) => typeof event.message?.content === "string" || blocks(event, "text").length)
       .map((event) => ({ text: textOf(event.message.content), isReplay: event.isReplay === true, isSynthetic: event.isSynthetic === true }));
 
+  // A subcommand such as `claude plugin validate --json` prints one JSON
+  // document, not a stream of events.
+  const document = () => {
+    try {
+      const parsed = JSON.parse(stream);
+      return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // What the CLI said without a model, as one list of what each typed message
+  // came to: the replayed user event the CLI wrote for it, if it wrote one, and
+  // the result that ended it. A result event ends one message. The text of a
+  // result is offered under the same rule as `resultText`.
+  const exchanges = () => {
+    const found = [];
+    let replay = null;
+    for (const event of events) {
+      if (event.type === "user" && event.isReplay === true && (typeof event.message?.content === "string" || blocks(event, "text").length)) replay = textOf(event.message.content);
+      if (event.type === "result") {
+        found.push({ replay, resultText: typeof event.result === "string" ? event.result : null, turns: event.num_turns, costUsd: event.total_cost_usd, isError: event.is_error === true });
+        replay = null;
+      }
+    }
+    if (models().length || found.some((each) => each.costUsd !== 0)) throw new Error("the exchanges are offered only for a trace that cost nothing and called no model");
+    return found;
+  };
+
   return {
     malformed,
+    document,
+    exchanges,
 
     hooks: () =>
       system("hook_response").map((event) => ({
@@ -198,6 +229,7 @@ export function readRun(dir, name) {
     sha256: sha256(bytes),
     recordedSha256: sidecar.trace_sha256 ?? null,
     argv: sidecar.argv ?? [],
+    env: sidecar.env ?? null,
     ended: { stderr: text(".stderr").trim().split("\n")[0], timedOut: sidecar.timed_out === true, spawnError: sidecar.spawn_error ?? null },
   };
 }

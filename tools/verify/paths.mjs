@@ -52,8 +52,19 @@ export function listDir(dir) {
 
 export const loadDir = (dir) => Promise.all(listDir(dir).map(async (entry) => ({ ...entry, ...(await import(pathToFileURL(join(dir, entry.file)).href)) })));
 
-// What a flow and its check must agree on: the file name, the tier, and the
-// arguments of every run. The flow says what the driver starts and the check
-// says what the checker accepts, so one edited alone is caught.
-export const flowShape = (flow) => [flow.file, flow.tier, flow.runs.map((run) => [run.name, run.args ?? []]).sort()];
-export const checkShape = (check) => [check.file, check.tier, Object.entries(check.args ?? {}).sort()];
+// What a flow and its check must agree on: the file name, the tier, and what
+// every run starts and with what. A run is a session started with arguments
+// or a subcommand of the CLI, and may add variables to its environment and
+// files to its config directory. The flow says what the driver starts and the
+// check says what the checker accepts, so one edited alone is caught.
+const entries = (map) => Object.entries(map ?? {}).sort();
+const runShape = (name, start, env, files) => [name, start, entries(env), entries(files)];
+export const flowShape = (flow) => [flow.file, flow.tier, flow.runs.map((run) => runShape(run.name, run.command ? ["command", run.command] : ["session", run.args ?? []], run.env, run.files)).sort()];
+export const checkShape = (check) => [
+  check.file,
+  check.tier,
+  [
+    ...Object.entries(check.args ?? {}).map(([name, args]) => runShape(name, ["session", args], check.env?.[name], check.files?.[name])),
+    ...Object.entries(check.commands ?? {}).map(([name, command]) => runShape(name, ["command", command], check.env?.[name], check.files?.[name])),
+  ].sort(),
+];

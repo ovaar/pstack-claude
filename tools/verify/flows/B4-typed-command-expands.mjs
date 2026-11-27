@@ -7,4 +7,4 @@
 import { attempts, BUG_FILES, HOW_COMMAND, LIMITS, REFUSE_DISPATCH, typed } from "../scenes.mjs";
 
 export const tier = "behavior";
-export const runs = attempts(3, () => ({ args: [...LIMITS, "--settings", REFUSE_DISPATCH, "--input-format", "stream-json", "--replay-user-messages"], stdin: typed(HOW_COMMAND), files: BUG_FILES }));
+export const runs = attempts(3, () => ({ args: [...LIMITS, "--settings", REFUSE_DISPATCH, "--input-format", "stream-json", "--replay-user-messages"], stdin: typed(HOW_COMMAND), project: BUG_FILES }));

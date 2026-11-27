@@ -6,4 +6,4 @@
 import { attempts, BUG_FILES, LIMITS, WHY_PROMPT } from "../scenes.mjs";
 
 export const tier = "behavior";
-export const runs = attempts(3, () => ({ args: [...LIMITS, WHY_PROMPT], files: BUG_FILES }));
+export const runs = attempts(3, () => ({ args: [...LIMITS, WHY_PROMPT], project: BUG_FILES }));

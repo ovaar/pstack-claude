@@ -3,4 +3,4 @@
 import { attempts, BUG_FILES, BUG_PROMPT, LIMITS } from "../scenes.mjs";
 
 export const tier = "behavior";
-export const runs = attempts(3, () => ({ args: [...LIMITS, BUG_PROMPT], files: BUG_FILES, vars: { PSTACK_SESSION_HOOK: "off" } }));
+export const runs = attempts(3, () => ({ args: [...LIMITS, BUG_PROMPT], project: BUG_FILES, env: { PSTACK_SESSION_HOOK: "off" } }));

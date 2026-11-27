@@ -11,6 +11,8 @@ export const rule = { attempts: 3, needs: 2 };
 const PROMPT = "There is a bug whose cause is not yet known: order totals are sometimes off by one cent. The logic spans cart.py, tax.py and totals.py, and the fix will likely change a function signature the other files call. Begin working on it now.";
 const ARGS = ["--max-turns", "1", "--max-budget-usd", "0.03", "--setting-sources", "", "--strict-mcp-config", "--no-session-persistence", PROMPT];
 export const args = { "attempt-1": ARGS, "attempt-2": ARGS, "attempt-3": ARGS };
+const OFF = { PSTACK_SESSION_HOOK: "off" };
+export const env = { "attempt-1": OFF, "attempt-2": OFF, "attempt-3": OFF };
 
 const HOOK = "SessionStart:startup";
 const ENDED = ["success", "error_max_turns"];

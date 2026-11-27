@@ -45,6 +45,7 @@ test("an untouched run passes every rule with nothing to observe", async () => {
     "stage-seal",
     "trace-sha256",
     "argv",
+    "extras",
     "init-present",
     "result-present",
     "cwd",
@@ -96,7 +97,7 @@ describe("one doctored trace per integrity rule", () => {
     const stray = { check: "E1", name: "extra", args: ["/context"], fixture: "untouched.S2.context" };
     const dir = evidence({ ...ENGINE, runs: [...ENGINE.runs, stray] }, { setup: { sessions: [] } });
     const judged = await check(dir, ENGINE.checks);
-    expect(failed(judged)).toEqual(["E1.context.cwd", "E1.extra.argv", "E1.extra.cwd", "E2.startup.cwd"]);
+    expect(failed(judged)).toEqual(["E1.context.extras", "E1.context.cwd", "E1.extra.argv", "E1.extra.extras", "E1.extra.cwd", "E2.startup.extras", "E2.startup.cwd"]);
     expect(said(judged, "E1.extra.argv")).toEndWith("want a run the check file declares arguments for, and it declares none for extra");
     expect(said(judged, "E1.extra.cwd")).toEndWith("want a run setup planned, and it planned none named extra");
   });
@@ -301,7 +302,7 @@ describe("verdicts and the word that leads the line", () => {
 
 describe("observations", () => {
   const cases = [
-    ["E1 2 SessionStart hook responses in one session", { E1: { events: (events) => [hook(events), ...events] } }],
+    ["E1 2 SessionStart:startup hook responses in one session", { E1: { events: (events) => [hook(events), ...events] } }],
     ["E1 hook SessionStart:startup wrote to stderr: warning: slow disk", { E1: { events: (events) => void (hook(events).stderr = "warning: slow disk\nsecond line\n") } }],
     ["E1 plugins beside pstack and the built-ins: other@market", { E1: { events: (events) => void init(events).plugins.push({ name: "other", path: "/opt/other", source: "other@market" }) } }],
     ["E1 MCP servers in init: github", { E1: { events: (events) => void (init(events).mcp_servers = [{ name: "github", status: "connected" }]) } }],

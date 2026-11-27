@@ -82,18 +82,18 @@ describe("how the tier is signed in", () => {
 describe("what a plan hands a session", () => {
   const env = { PATH: "/bin", TMPDIR: "/tmp", HOME: "/home/real", USER: "someone", CLAUDE_CONFIG_DIR: "/home/real/.claude", ANTHROPIC_API_KEY: "key", CLAUDE_CODE_OAUTH_TOKEN: "token", CLAUDECODE: "1" };
   const surface = { id: "S0", tier: "surface", runs: [{ name: "startup", args: [] }] };
-  const behavior = { id: "B0", tier: "behavior", runs: [{ name: "attempt-1", args: ["--max-turns", "1", "--max-budget-usd", "0.03"], vars: { PSTACK_SESSION_HOOK: "off" } }, { name: "attempt-2", args: ["--max-turns", "1", "--max-budget-usd", "0.03"] }] };
+  const behavior = { id: "B0", tier: "behavior", runs: [{ name: "attempt-1", args: ["--max-turns", "1", "--max-budget-usd", "0.03"], env: { PSTACK_SESSION_HOOK: "off" } }, { name: "attempt-2", args: ["--max-turns", "1", "--max-budget-usd", "0.03"] }] };
   const names = (sessions) => sessions.map((each) => Object.keys(each.env).sort());
 
   test("a clean sign-in gives the model tier the credentials it names, and the surface tier nothing", () => {
-    const sessions = plan([surface, behavior], tempDir(), env, { mode: "clean", credential: ["ANTHROPIC_API_KEY"] });
+    const sessions = plan([surface, behavior], tempDir(), env, { access: { mode: "clean", credential: ["ANTHROPIC_API_KEY"] } });
     expect(names(sessions)).toEqual([["CLAUDE_CONFIG_DIR", "HOME", "PATH", "TMPDIR"], ["ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR", "HOME", "PATH", "PSTACK_SESSION_HOOK", "TMPDIR"], ["ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR", "HOME", "PATH", "TMPDIR"]]);
     // A throwaway home, not the person's.
     for (const each of sessions) expect(each.env.HOME).not.toBe("/home/real");
   });
 
   test("a local sign-in gives the model tier the person's home and login name, and no credential", () => {
-    const sessions = plan([surface, behavior], tempDir(), env, { mode: "local", credential: [] });
+    const sessions = plan([surface, behavior], tempDir(), env, { access: { mode: "local", credential: [] } });
     expect(names(sessions)).toEqual([["CLAUDE_CONFIG_DIR", "HOME", "PATH", "TMPDIR"], ["CLAUDE_CONFIG_DIR", "HOME", "PATH", "PSTACK_SESSION_HOOK", "TMPDIR", "USER"], ["CLAUDE_CONFIG_DIR", "HOME", "PATH", "TMPDIR", "USER"]]);
     expect(sessions[1].env).toMatchObject({ HOME: "/home/real", CLAUDE_CONFIG_DIR: "/home/real/.claude" });
     expect(sessions[0].env.HOME).not.toBe("/home/real");
@@ -103,25 +103,56 @@ describe("what a plan hands a session", () => {
 
   test("a local sign-in without a config directory of the person's names none", () => {
     const { CLAUDE_CONFIG_DIR, ...rest } = env;
-    expect(names(plan([behavior], tempDir(), rest, { mode: "local", credential: [] }))[1]).toEqual(["HOME", "PATH", "TMPDIR", "USER"]);
+    expect(names(plan([behavior], tempDir(), rest, { access: { mode: "local", credential: [] } }))[1]).toEqual(["HOME", "PATH", "TMPDIR", "USER"]);
   });
 
   test("with no way to sign in the model tier plans no session, and the surface tier still does", () => {
-    expect(plan([surface, behavior], tempDir(), env, NONE).map((each) => each.id)).toEqual(["S0"]);
+    expect(plan([surface, behavior], tempDir(), env, { access: NONE }).map((each) => each.id)).toEqual(["S0"]);
   });
 });
 
-describe("a flow's files", () => {
-  const flow = (files) => ({ id: "B0", tier: "behavior", runs: [{ name: "attempt-1", args: ["--max-turns", "1", "--max-budget-usd", "0.03"], files }] });
+describe("a flow's project", () => {
+  const flow = (project) => ({ id: "B0", tier: "behavior", runs: [{ name: "attempt-1", args: ["--max-turns", "1", "--max-budget-usd", "0.03"], project }] });
 
   test("are the project its session starts in", async () => {
-    const [made] = plan([flow({ "a.py": "x = 1\n", "pkg/b.py": "y = 2\n" })], tempDir(), {}, { mode: "clean", credential: [] });
+    const [made] = plan([flow({ "a.py": "x = 1\n", "pkg/b.py": "y = 2\n" })], tempDir(), {}, { access: { mode: "clean", credential: [] } });
     expect(await Bun.file(join(made.cwd, "a.py")).text()).toBe("x = 1\n");
     expect(await Bun.file(join(made.cwd, "pkg/b.py")).text()).toBe("y = 2\n");
   });
 
   test.each([["../escape.py"], ["/tmp/absolute.py"], ["a/../../up.py"]])("may not leave the working directory: %s", (name) => {
-    expect(() => plan([flow({ [name]: "x" })], tempDir(), {}, { mode: "clean", credential: [] })).toThrow("a flow file may not leave its working directory");
+    expect(() => plan([flow({ [name]: "x" })], tempDir(), {}, { access: { mode: "clean", credential: [] } })).toThrow("a flow file may not leave its working directory");
+  });
+});
+
+// The surface tier's extras rule, over the model tier: a session may also hold
+// the way it was signed in, and no more.
+describe("what a model-tier run may hold", () => {
+  const CLEAN = { mode: "clean", credential: ["ANTHROPIC_API_KEY"], required: false, planned: { max_usd: 0.15, max_turns: 5 } };
+  const extras = (judged) => judged.checks.flatMap((each) => (each.integrity ?? []).filter((rule) => rule.id.endsWith("extras") && !rule.ok).map((rule) => `${each.id}.${rule.id}`));
+  const SIGNED = ["CLAUDE_CONFIG_DIR", "HOME", "LANG", "PATH", "TMPDIR"];
+
+  test("signed in as the person: their USER, and no config directory of the verifier's", async () => {
+    expect(extras(await check(evidence(await shipped("B1"))))).toEqual([]);
+  });
+
+  test("signed in by a credential: exactly the names setup recorded, each one", async () => {
+    const B1 = await shipped("B1");
+    expect(extras(await check(evidence(B1, { setup: { behavior: CLEAN }, B1: { sidecar: { env: [...SIGNED, "ANTHROPIC_API_KEY"].sort() } } })))).toEqual([]);
+    expect(extras(await check(evidence(B1, { setup: { behavior: CLEAN }, B1: { sidecar: { env: SIGNED } } })))).toEqual(["B1.attempt-1.extras", "B1.attempt-2.extras", "B1.attempt-3.extras"]);
+    const both = [...SIGNED, "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"].sort();
+    expect(extras(await check(evidence(B1, { setup: { behavior: CLEAN }, B1: { sidecar: { env: both } } })))).toHaveLength(3);
+  });
+
+  test("a surface run that got a credential fails extras", async () => {
+    const S2 = await shipped("S2");
+    const judged = await check(evidence(S2, { S2: { sidecar: { env: [...SIGNED, "ANTHROPIC_API_KEY"].sort() } } }));
+    expect(extras(judged)).toEqual(S2.runs.map((run) => `S2.${run.name}.extras`));
+  });
+
+  test("a run signed in as the person may write nothing in a config directory, which is theirs", () => {
+    const flow = { id: "B0", tier: "behavior", runs: [{ name: "attempt-1", args: ["--max-turns", "1", "--max-budget-usd", "0.03"], files: { "pstack-models.md": "session hook: off\n" } }] };
+    expect(() => plan([flow], tempDir(), { HOME: tempDir() }, { access: { mode: "local", credential: [] } })).toThrow("B0 attempt-1 is signed in as the person, whose config directory a flow may not write");
   });
 });
 
@@ -160,9 +191,10 @@ describe("what the first line says", () => {
 
   // The words of the first line, over every shipped check at once.
   test("with every check run and every one passing, the word is PASS and the line holds both tiers", async () => {
-    const parts = await Promise.all(["S2", "S3", "B1", "B2", "B3", "B4", "B5"].map(shipped));
-    const judged = await check(evidence({ checks: CHECKS_DIR, skills: true, behavior: true, runs: parts.flatMap((part) => part.runs) }));
-    expect(judged.line).toMatch(/^PASS surface 2\/2 \| behavior 5\/5 \(\d+ model calls, \$0\.\d{4}\) \| round 1$/);
+    const parts = await Promise.all(flows.map((flow) => shipped(flow.id)));
+    const judged = await check(evidence({ checks: CHECKS_DIR, tree: { skills: true }, behavior: true, runs: parts.flatMap((part) => part.runs) }));
+    const surface = flows.filter((flow) => flow.tier === "surface").length;
+    expect(judged.line).toMatch(new RegExp(`^PASS surface ${surface}/${surface} \\| behavior 5/5 \\(\\d+ model calls, \\$0\\.\\d{4}\\) \\| round 1$`));
   });
 
   // A subagent's calls are outside --max-turns, so the plan cannot bound them.
@@ -220,10 +252,10 @@ describe("the flows and their checks", () => {
   // B5 means something only as B1 with one condition changed.
   test("B5 is B1's prompt, project and limits with the hook off, and nothing else", () => {
     const [b1, b5] = ["B1", "B5"].map((id) => flows.find((flow) => flow.id === id));
-    const same = (run) => JSON.stringify([run.args, run.files, run.timeoutMs]);
+    const same = (run) => JSON.stringify([run.args, run.project, run.files, run.timeoutMs]);
     expect(b5.runs.map(same)).toEqual(b1.runs.map(same));
-    expect(b1.runs.some((run) => run.vars)).toBe(false);
-    expect(b5.runs.map((run) => run.vars)).toEqual(b5.runs.map(() => ({ PSTACK_SESSION_HOOK: "off" })));
+    expect(b1.runs.some((run) => run.env)).toBe(false);
+    expect(b5.runs.map((run) => run.env)).toEqual(b5.runs.map(() => ({ PSTACK_SESSION_HOOK: "off" })));
     const [c1, c5] = ["B1", "B5"].map((id) => checks.find((entry) => entry.id === id));
     expect(c5.args).toEqual(c1.args);
   });

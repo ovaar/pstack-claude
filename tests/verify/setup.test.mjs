@@ -192,6 +192,58 @@ describe("a session's environment", () => {
     expect(runs[1].env).toEqual({ PATH: "/usr/bin", TMPDIR: "/tmp", LANG: "en_US.UTF-8", HOME: join(base, "S3/startup/home"), CLAUDE_CONFIG_DIR: join(base, "S3/startup/config") });
     expect(existsSync(runs[0].config)).toBe(true);
   });
+
+  test("a run adds its declared switch and sheet to its sandbox, and setup records both", () => {
+    const base = tempDir();
+    const sheet = "session hook: off\n";
+    const flows = [{ id: "S5", runs: [{ name: "off", args: [], stdin: "", env: { PSTACK_SESSION_HOOK: "off" }, files: { "pstack-models.md": sheet } }, { name: "plain", args: [], stdin: "" }] }];
+    const [off, plain] = plan(flows, base, parent);
+    expect(off.env).toEqual({ ...plain.env, HOME: off.env.HOME, CLAUDE_CONFIG_DIR: off.env.CLAUDE_CONFIG_DIR, PSTACK_SESSION_HOOK: "off" });
+    expect(readFileSync(join(off.config, "pstack-models.md"), "utf8")).toBe(sheet);
+    expect(off.extras).toEqual({ env: { PSTACK_SESSION_HOOK: "off" }, files: { "pstack-models.md": sha256(sheet) } });
+    expect(plain.extras).toEqual({ env: {}, files: {} });
+    expect(readdirSync(plain.config)).toEqual([]);
+  });
+
+  test("a run may set only the plugin's own variables and write only inside its config directory", () => {
+    const flow = (run) => [{ id: "S5", runs: [{ name: "x", args: [], stdin: "", ...run }] }];
+    expect(() => plan(flow({ env: { ANTHROPIC_API_KEY: "dummy" } }), tempDir(), parent)).toThrow("S5 x may not set ANTHROPIC_API_KEY; only PSTACK_ variables");
+    expect(() => plan(flow({ env: { PSTACK_session_hook: "off" } }), tempDir(), parent)).toThrow("may not set");
+    expect(() => plan(flow({ files: { "../outside.md": "x" } }), tempDir(), parent)).toThrow("only inside the config directory");
+    expect(() => plan(flow({ files: { "/tmp/outside.md": "x" } }), tempDir(), parent)).toThrow("only inside the config directory");
+  });
+
+  // settings.json in the config directory carries an env block and hooks, and
+  // the CLI applies both to the session: a file is a way round the variable rule.
+  test("a run may write the sheet and no other file, so settings and credentials stay out", () => {
+    const flow = (name) => [{ id: "S5", runs: [{ name: "x", args: [], stdin: "", files: { [name]: "{}" } }] }];
+    for (const name of ["settings.json", "settings.local.json", ".credentials.json", "sub/pstack-models.md"]) {
+      const base = tempDir();
+      expect(() => plan(flow(name), base, parent)).toThrow(`may write only pstack-models.md in the config directory, not ${name}`);
+      expect(existsSync(join(base, "S5/x/config", name))).toBe(false);
+    }
+  });
+
+  test("a run that shares takes the sandbox of an earlier run of its flow, and none else", () => {
+    const base = tempDir();
+    const flows = [{ id: "S4", runs: [{ name: "clear", args: [], stdin: "" }, { name: "resume", share: "clear", args: [], stdin: "" }, { name: "apart", args: [], stdin: "" }] }];
+    const [clear, resume, apart] = plan(flows, base, parent);
+    expect([resume.cwd, resume.config, resume.env.HOME]).toEqual([clear.cwd, clear.config, clear.env.HOME]);
+    expect(apart.cwd).toBe(join(base, "S4/apart/cwd"));
+    const later = [{ id: "S4", runs: [{ name: "resume", share: "clear", args: [], stdin: "" }, { name: "clear", args: [], stdin: "" }] }];
+    expect(() => plan(later, base, parent)).toThrow("S4 resume shares the sandbox of clear, which no earlier run of the flow has");
+  });
+
+  test("the input of a run may be made of the skill directories of the stage", () => {
+    const stage = tempDir();
+    for (const name of ["bro", "tdd"]) {
+      mkdirSync(join(stage, "plugins/pstack/skills", name), { recursive: true });
+      writeFileSync(join(stage, "plugins/pstack/skills", name, "SKILL.md"), "---\nname: x\n---\n");
+    }
+    mkdirSync(join(stage, "plugins/pstack/skills/empty"), { recursive: true });
+    const flows = [{ id: "S6", runs: [{ name: "typed", args: [], stdin: ({ skills }) => skills.map((name) => `/pstack:${name}\n`).join("") }] }];
+    expect(plan(flows, tempDir(), parent, { stage })[0].stdin).toBe("/pstack:bro\n/pstack:tdd\n");
+  });
 });
 
 describe.skipIf(process.platform === "win32")("doctor", () => {

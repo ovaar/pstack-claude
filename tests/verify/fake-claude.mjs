@@ -5,8 +5,13 @@
 // which it reads from the directory setup made for that run,
 // <sandbox>/<check>/<run>/cwd, with the stage and the sandbox it was given.
 // The names of its variables go into a transcript, which the driver saves.
+// It is told which run it is by what the run's flow lists: the sandbox it
+// started in names the run, or the run whose sandbox it shares, and the
+// arguments name which of those.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
+
+import { FLOWS_DIR, loadDir } from "../../tools/verify/paths.mjs";
 
 const args = process.argv.slice(2);
 if (args.includes("--version")) {
@@ -20,16 +25,25 @@ if (args[0] === "auth") {
   console.log(JSON.stringify({ loggedIn: signedIn, authMethod: signedIn ? "stand-in" : "none" }));
   process.exit(signedIn ? 0 : 1);
 }
-const stage = args[args.indexOf("--plugin-dir") + 1].replace(/\/plugins\/pstack$/, "");
-const [check, run] = process.cwd().split(sep).slice(-3);
+const command = args[0] === "plugin";
+const target = args.at(-1);
+const stage = command ? target.replace(/\/plugins\/pstack$/, "") : args[args.indexOf("--plugin-dir") + 1].replace(/\/plugins\/pstack$/, "");
+const [check, lead] = process.cwd().split(sep).slice(-3);
 const sandbox = process.cwd().split(sep).slice(0, -3).join(sep);
+const started = JSON.stringify(args.slice(args.indexOf("--verbose") + 1));
+const flow = (await loadDir(FLOWS_DIR)).find((each) => each.id === check);
+const run = flow.runs.filter((each) => (each.share ?? each.name) === lead).find((each) => (command ? each.command : JSON.stringify(each.args ?? []) === started));
 
-// A session signed in as a person has no config directory of its own.
+const fixtures = join(import.meta.dir, "fixtures");
+const named = (text) => text.replaceAll("<STAGE>", stage).replaceAll("<SANDBOX>", sandbox);
+// The first line says which variables the session had; a recording of the
+// run's transcript, where there is one, follows it. A session signed in as a
+// person has no config directory of its own, and leaves none.
 if (process.env.CLAUDE_CONFIG_DIR) {
   const transcripts = join(process.env.CLAUDE_CONFIG_DIR, "projects", "stand-in");
   mkdirSync(transcripts, { recursive: true });
-  writeFileSync(join(transcripts, "session.jsonl"), `${JSON.stringify({ type: "stand-in", env: Object.keys(process.env).sort() })}\n`);
+  const recordedTranscript = join(fixtures, `untouched.${check}.${run.name}.transcript.jsonl`);
+  writeFileSync(join(transcripts, "session.jsonl"), `${JSON.stringify({ type: "stand-in", env: Object.keys(process.env).sort() })}\n${existsSync(recordedTranscript) ? named(readFileSync(recordedTranscript, "utf8")) : ""}`);
 }
 
-const recording = readFileSync(join(import.meta.dir, "fixtures", `untouched.${check}.${run}.jsonl`), "utf8");
-process.stdout.write(recording.replaceAll("<STAGE>", stage).replaceAll("<SANDBOX>", sandbox));
+process.stdout.write(named(readFileSync(join(fixtures, `untouched.${check}.${run.name}.jsonl`), "utf8")));

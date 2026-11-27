@@ -71,9 +71,15 @@ test.skipIf(process.platform === "win32")("a full run passes every check, hands 
 
   const traces = tracesOf(dir);
   expect(traces.length).toBeGreaterThanOrEqual(2);
+  // The variables a run's flow declares reach that run and no other, even
+  // with the same name exported by the surrounding job.
+  const sessions = json(join(dir, "setup.json")).sessions;
   for (const trace of traces) {
-    expect(json(`${trace}.transcript.jsonl`)).toEqual({ type: "stand-in", env: SESSION_VARIABLES });
-    expect(json(`${trace}.sidecar.json`)).toMatchObject({ env: SESSION_VARIABLES, exit_code: 0, timed_out: false });
+    const [name, check] = trace.split("/").reverse();
+    const added = Object.keys(sessions.find((session) => session.check === check && session.name === name).env);
+    const env = [...SESSION_VARIABLES, ...added].sort();
+    expect(readFileSync(`${trace}.transcript.jsonl`, "utf8").split("\n").map((line) => (line ? JSON.parse(line) : null))[0]).toEqual({ type: "stand-in", env });
+    expect(json(`${trace}.sidecar.json`)).toMatchObject({ env, exit_code: 0, timed_out: false });
   }
 
   expect(existsSync(join(dir, "stage/VERSION"))).toBe(true);
@@ -219,7 +225,7 @@ test("a wrong argument is a usage error, with nothing run", () => {
   expect(usage(["--jobs", "4"])).toEqual([2, "", first]);
   expect(usage(["--tree"])).toEqual([2, "", first]);
   expect(usage(["check"])).toEqual([2, "", first]);
-  expect(usage(["--flow", "S9"])[2]).toStartWith("no flow S9; flows: B1, B2, B3, B4, B5, S2, S3");
+  expect(usage(["--flow", "S9"])[2]).toMatch(/^no flow S9; flows: B1, B2, B3, B4, B5, .*\bS2\b.*\bS3\b/);
   expect(usage(["--require-behavior", "--tier"])).toEqual([2, "", first]);
   expect(usage(["--tier", "--require-behavior"])).toEqual([2, "", first]);
 }, LONG);
@@ -235,7 +241,7 @@ test.skipIf(process.platform === "win32")("with no credential the model tier say
   const repo = productRepo();
   const root = tempDir();
   const run = verify(["--tree", repo, "--evidence", root]);
-  expect(run.lines[0]).toMatch(/^STAND-IN surface 2\/2 \| behavior NOT RUN: no credential \| round 1$/);
+  expect(run.lines[0]).toMatch(/^STAND-IN surface (\d+)\/\1 \| behavior NOT RUN: no credential \| round 1$/);
   expect(run.status).toBe(0);
   const [dir] = runsOf(root);
   expect(existsSync(join(dir, "traces/B1"))).toBe(false);
@@ -244,14 +250,14 @@ test.skipIf(process.platform === "win32")("with no credential the model tier say
 
   const required = verify(["--require-behavior", "--tree", repo, "--evidence", tempDir()]);
   expect(required.status).toBe(1);
-  expect(required.lines[0]).toStartWith("FAIL surface 2/2 | behavior NOT RUN: no credential | round");
+  expect(required.lines[0]).toMatch(/^FAIL surface (\d+)\/\1 \| behavior NOT RUN: no credential \| round/);
   expect(required.stdout).toContain("no credential, and --require-behavior asks for the model tier");
 }, LONG);
 
 test.skipIf(process.platform === "win32")("a credential in the environment signs in the model tier by name, in a throwaway config directory, and is written nowhere", () => {
   const root = tempDir();
   const run = verify(["--tree", productRepo(), "--evidence", root], { ANTHROPIC_API_KEY: KEY, CLAUDE_CODE_OAUTH_TOKEN: "" });
-  expect(run.lines[0]).toMatch(/^STAND-IN surface 2\/2 \| behavior 5\/5 \(\d+ model calls, \$\d\.\d{4}\) \| round 1$/);
+  expect(run.lines[0]).toMatch(/^STAND-IN surface (\d+)\/\1 \| behavior 5\/5 \(\d+ model calls, \$\d\.\d{4}\) \| round 1$/);
   expect(run.status).toBe(0);
   const [dir] = runsOf(root);
   expect(run.stdout).toContain("- model tier: signed in by ANTHROPIC_API_KEY in a throwaway config directory;");
@@ -261,10 +267,16 @@ test.skipIf(process.platform === "win32")("a credential in the environment signs
   expect(modelRuns(dir).length).toBe(15);
   const condition = (trace) => (trace.includes("/B5/") ? ["PSTACK_SESSION_HOOK"] : []);
   for (const trace of modelRuns(dir)) expect(names(trace)).toEqual([...SESSION_VARIABLES, "ANTHROPIC_API_KEY", ...condition(trace)].sort());
-  for (const trace of tracesOf(dir).filter((each) => !modelRuns(dir).includes(each))) expect(names(trace)).toEqual(SESSION_VARIABLES);
-  // The hook-off condition reaches the sessions that need it, and only those.
+  // A surface run has no credential, only the switches its flow declares.
+  const sessions = json(join(dir, "setup.json")).sessions;
+  const declared = (trace) => {
+    const [name, check] = trace.split("/").reverse();
+    return Object.keys(sessions.find((session) => session.check === check && session.name === name).env);
+  };
+  for (const trace of tracesOf(dir).filter((each) => !modelRuns(dir).includes(each))) expect(names(trace)).toEqual([...SESSION_VARIABLES, ...declared(trace)].sort());
+  // The hook switch reaches the sessions that declare it, and only those.
   const hookOff = tracesOf(dir).filter((trace) => names(trace).includes("PSTACK_SESSION_HOOK"));
-  expect(hookOff.map((trace) => trace.split("/").slice(-2).join("/")).sort()).toEqual(["B5/attempt-1", "B5/attempt-2", "B5/attempt-3"]);
+  expect(hookOff.map((trace) => trace.split("/").slice(-2).join("/")).sort()).toEqual(["B5/attempt-1", "B5/attempt-2", "B5/attempt-3", "S5/env-off", "S5/env-on"]);
   expect(filesUnder(root).filter((file) => readFileSync(file).includes(KEY))).toEqual([]);
   expect(readdirSync(tmp)).toEqual([]);
 }, LONG);
@@ -274,7 +286,7 @@ test.skipIf(process.platform === "win32")("without a credential the model tier s
   writeFileSync(join(home, ".stand-in-login"), "");
   const root = tempDir();
   const run = verify(["--tree", productRepo(), "--evidence", root], { HOME: home, USER: "someone-who-runs-it" });
-  expect(run.lines[0]).toMatch(/^STAND-IN surface 2\/2 \| behavior 5\/5 \(/);
+  expect(run.lines[0]).toMatch(/^STAND-IN surface (\d+)\/\1 \| behavior 5\/5 \(/);
   const [dir] = runsOf(root);
   expect(run.stdout).toContain("- model tier: signed in by the local login;");
   expect(json(join(dir, "setup.json")).behavior).toMatchObject({ mode: "local", credential: [] });
