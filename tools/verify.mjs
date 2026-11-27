@@ -27,6 +27,16 @@
 // SKIPPED: no CLI, nothing ran. FAIL: a check failed, was unobservable or
 // could not be judged. Exit 1 on FAIL, which a missing CLI is when
 // PSTACK_VERIFY_REQUIRE_CLI=1.
+//
+// The behavior tier drives real sessions with --model haiku, so it needs a
+// way to sign in: CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY in the
+// environment (handed to those sessions by name, with a throwaway config
+// directory), else the login `claude auth status` finds. With neither, the
+// line says `behavior NOT RUN: no credential` and the word is PARTIAL, never
+// PASS; --require-behavior makes that a FAIL. A credential the API refuses is
+// an error, not a skip. The cost and the number of model calls are on the
+// first line, and a plan that could cost more than the budget in
+// verify/paths.mjs is refused before it starts.
 
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -37,20 +47,28 @@ import { check, TIERS } from "./verify/check.mjs";
 import { drive } from "./verify/drive.mjs";
 import { nextRound, prune, recordRound, writeEvidence } from "./verify/evidence.mjs";
 import { CHECKS_DIR, checkShape, FLOWS_DIR, flowShape, loadDir } from "./verify/paths.mjs";
-import { buildStage, doctor, evidenceRoot, plan, sandbox, sandboxBase, snapshot } from "./verify/setup.mjs";
+import { behaviorAccess, buildStage, caps, doctor, evidenceRoot, plan, sandbox, sandboxBase, snapshot } from "./verify/setup.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
-const USAGE = `usage: bun tools/verify.mjs [--tier ${TIERS.join("|")}|all] [--flow <id>] [--tree <checkout>] [--evidence <dir>] [--jobs 1-3]
+const USAGE = `usage: bun tools/verify.mjs [--tier ${TIERS.join("|")}|all] [--flow <id>] [--tree <checkout>] [--evidence <dir>] [--jobs 1-3] [--require-behavior]
        bun tools/verify.mjs check <evidence-dir>`;
 
 class UsageError extends Error {}
 
+// Options that stand alone.
+const SWITCHES = { "--require-behavior": "requireBehavior" };
+
 function parse(args) {
-  const options = { tier: "all", flow: null, tree: repo, evidence: null, jobs: 2 };
-  for (let i = 0; i < args.length; i += 2) {
+  const options = { tier: "all", flow: null, tree: repo, evidence: null, jobs: 2, requireBehavior: false };
+  for (let i = 0; i < args.length; i += 1) {
+    if (Object.hasOwn(SWITCHES, args[i])) {
+      options[SWITCHES[args[i]]] = true;
+      continue;
+    }
     const name = args[i].replace(/^--/, "");
-    if (!args[i].startsWith("--") || !Object.hasOwn(options, name) || args[i + 1] === undefined) throw new UsageError(USAGE);
+    if (!args[i].startsWith("--") || Object.values(SWITCHES).includes(name) || !Object.hasOwn(options, name) || args[i + 1] === undefined) throw new UsageError(USAGE);
     options[name] = args[i + 1];
+    i += 1;
   }
   options.jobs = Number(options.jobs);
   if (![...TIERS, "all"].includes(options.tier) || ![1, 2, 3].includes(options.jobs)) throw new UsageError(USAGE);
@@ -96,8 +114,11 @@ async function verify(options) {
   try {
     const { stage, stageHash, stageSeal } = buildStage(snap, join(dir, "stage"));
     const cli = doctor(sandbox(join(base, "doctor")));
-    const sessions = cli.problem ? [] : plan(selected, base);
+    const wantsModel = selected.some((flow) => flow.tier === "behavior");
+    const access = wantsModel && !cli.problem ? behaviorAccess(cli, sandbox(join(base, "access"))) : { mode: "none", credential: [] };
+    const sessions = cli.problem ? [] : plan(selected, base, process.env, access);
     const setup = {
+      behavior: wantsModel ? { ...access, required: options.requireBehavior, planned: caps(sessions) } : null,
       run,
       round: nextRound(root),
       subject_id: snap.subjectId,

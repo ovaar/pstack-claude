@@ -13,6 +13,9 @@ import { gitEnv } from "../../tools/verify/setup.mjs";
 import { sha256, stageHash, stageSeal } from "../../tools/verify/stage.mjs";
 import { FIXTURES } from "./scrub.mjs";
 
+// The line of skills/how/SKILL.md that B4 looks for in a subagent's prompt.
+const HOW_BRIEF = "> You are writing an architectural explanation for a senior engineer. Explore the codebase and write an explanation they could read.";
+
 const made = [];
 export function cleanup() {
   for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
@@ -55,7 +58,7 @@ export function fixtureStage(dir, { skills = false } = {}) {
   const init = eventsOf(recorded("untouched.S2.context")).find((event) => event.subtype === "init");
   for (const name of init.skills.filter((skill) => skill.startsWith("pstack:")).map((skill) => skill.slice("pstack:".length))) {
     mkdirSync(join(dir, PLUGIN, "skills", name), { recursive: true });
-    writeFileSync(join(dir, PLUGIN, "skills", name, "SKILL.md"), `---\nname: ${name}\n---\n`);
+    writeFileSync(join(dir, PLUGIN, "skills", name, "SKILL.md"), `---\nname: ${name}\n---\n${name === "how" ? `\n${HOW_BRIEF}\n` : ""}`);
   }
   return dir;
 }
@@ -83,7 +86,7 @@ export const ENGINE = {
 // checks show as not selected.
 export async function shipped(id) {
   const flow = (await loadDir(FLOWS_DIR)).find((each) => each.id === id);
-  return { checks: CHECKS_DIR, skills: true, runs: flow.runs.map((run) => ({ check: id, name: run.name, args: run.args ?? [], fixture: `untouched.${id}.${run.name}` })) };
+  return { checks: CHECKS_DIR, skills: true, behavior: flow.tier === "behavior", runs: flow.runs.map((run) => ({ check: id, name: run.name, args: run.args ?? [], fixture: `untouched.${id}.${run.name}` })) };
 }
 
 // The directory a run leaves for the checker: a stage, setup's record of the
@@ -92,13 +95,15 @@ export async function shipped(id) {
 // or its text (`raw`), changes the recorded `argv` or other sidecar fields,
 // adds a transcript or stderr, or leaves the trace out (`absent`). `stage` shapes the stage before setup
 // records it and `moved` changes it afterwards.
-export function evidence({ checks, runs, skills }, edits = {}) {
+export function evidence({ checks, runs, skills, behavior = false }, edits = {}) {
   const dir = tempDir();
   const stage = fixtureStage(join(dir, "stage"), { skills });
   const sandbox = join(dir, "sandbox");
   edits.stage?.(stage);
   const sessions = runs.map((run) => {
-    const edit = edits[run.check] ?? {};
+    // `edits[<check>.<run>]` changes one run of a check, and wins over
+    // `edits[<check>]`, which changes every run of it.
+    const edit = { ...edits[run.check], ...edits[`${run.check}.${run.name}`] };
     const events = eventsOf(recorded(edit.fixture ?? run.fixture).replaceAll("<STAGE>", stage).replaceAll("<SANDBOX>", sandbox));
     // Setup plans a session where the recorded one ran.
     const cwd = events.find((event) => event.subtype === "init")?.cwd ?? join(sandbox, run.check, run.name, "cwd");
@@ -115,6 +120,8 @@ export function evidence({ checks, runs, skills }, edits = {}) {
     sandbox,
     cli: { path: "claude", real_path: "/opt/claude/2.1.332", sha256: "c".repeat(64), version: "2.1.332", stand_in: null, missing: false, required: false, problem: null },
     selection: { tier: "all", flow: null },
+    // The recordings of the model tier were made signed in as a person.
+    behavior: behavior ? { mode: "local", credential: [], required: false, planned: { max_usd: 0.42, max_turns: 14 } } : null,
     selected: [...new Set(runs.map((run) => run.check))],
     checks: listDir(checks),
     sessions: sessions.map(({ check, name, cwd }) => ({ check, name, cwd })),

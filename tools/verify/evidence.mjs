@@ -56,8 +56,15 @@ function evidenceCell(check) {
     return `${check.assertions.map((item) => item.saw).join("; ")}; ${check.integrity.length} of ${check.integrity.length} integrity rules hold`;
   }
   if (check.verdict !== "fail") return check.reason;
-  const failed = [...check.integrity, ...check.assertions].filter((item) => !item.ok).map((item) => `${item.id}: saw ${item.saw}, want ${item.want}`);
+  // Every attempt of a sampled behavior is shown, the ones that missed too.
+  const failed = [...check.integrity, ...check.assertions].filter((item) => !item.ok || item.attempt).map((item) => `${item.id}: saw ${item.saw}, want ${item.want}`);
   return [...failed, ...(check.reason ? [check.reason] : [])].join("; ");
+}
+
+// How the model tier was signed in, by the names of the variables only.
+function modelTier({ behavior }) {
+  if (behavior.mode === "none") return "NOT RUN, no credential";
+  return `signed in by ${behavior.mode === "clean" ? `${behavior.credential.join(", ")} in a throwaway config directory` : "the local login"}`;
 }
 
 export function markdown(result) {
@@ -71,6 +78,7 @@ export function markdown(result) {
     `- CLI: ${result.cli_version ?? "none"}${result.cli_path ? ` at ${result.cli_path}, sha256 ${result.cli_sha256}` : ""} (checks verified on ${result.cli_verified})`,
     ...(result.cli_stand_in ? [`- CLI stand-in: ${result.cli_stand_in}. No verdict on the claude a user has.`] : []),
     `- cost: $${result.cost_usd}`,
+    ...(result.behavior ? [`- model tier: ${modelTier(result)}; ${result.model_calls} model calls; planned at most $${result.behavior.planned?.max_usd ?? 0} and ${result.behavior.planned?.max_turns ?? 0} turns`] : []),
     `- run: ${result.run}`,
     ...(result.rechecked_at ? [`- rechecked: ${result.rechecked_at}`] : []),
     "",
@@ -101,6 +109,7 @@ export function receipt(result) {
     cli_sha256: result.cli_sha256,
     ...(result.cli_stand_in ? { cli_stand_in: result.cli_stand_in } : {}),
     cost_usd: result.cost_usd,
+    ...(result.behavior ? { model_tier: { mode: result.behavior.mode, credential_names: result.behavior.credential, required: result.behavior.required, model_calls: result.model_calls } } : {}),
     round: result.round,
     run: result.run,
     ...(result.rechecked_at ? { rechecked_at: result.rechecked_at } : {}),

@@ -12,7 +12,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { PLUGIN } from "../plugin.mjs";
-import { CHECKS_DIR, loadDir } from "./paths.mjs";
+import { BUDGET_USD, CHECKS_DIR, loadDir } from "./paths.mjs";
 import { sha256, stageHash, stageSeal } from "./stage.mjs";
 import { readRun, runNames } from "./trace.mjs";
 
@@ -111,6 +111,18 @@ function integrity(run, check, setup, stage) {
     if (results.length) rule("zero-cost", results.every((result) => result.costUsd === 0), `total_cost_usd ${results.map((result) => result.costUsd).join(", ")}`, "total_cost_usd 0 on a zero-model run");
     rule("no-model", models.length === 0, models.length ? `model ${models.join(", ")}` : "no real model id", "no real model id on a zero-model run");
   }
+
+  // Every model-tier run called a model, which a signed-out session, a
+  // refused key and a stand-in that never reached the API do not. Each tool
+  // result answers a tool call this session's stream shows.
+  if (check.tier === "behavior") {
+    const models = run.trace.models();
+    const uses = new Set(run.trace.toolUses().map((use) => use.id));
+    const orphans = run.trace.toolResults().filter((result) => !uses.has(result.toolUseId));
+    if (results.length) rule("billed", results.every((result) => result.costUsd > 0), `total_cost_usd ${results.map((result) => result.costUsd).join(", ")}`, "total_cost_usd above 0 on a run that called a model");
+    rule("real-model", models.length > 0, models.length ? `model ${models.join(", ")}` : "no real model id", "a real model id, billed or on a message");
+    rule("tool-results", orphans.length === 0, orphans.length ? `${orphans.length} tool results with no matching tool call` : "every tool result matches a tool call", "every tool result matching a tool call in the stream");
+  }
   return rules;
 }
 
@@ -155,9 +167,19 @@ function judge(id, check, setup, stage, dir) {
   if (setup.cli.problem) {
     return { ...base, verdict: setup.cli.missing && !setup.cli.required ? "skipped" : "error", reason: setup.cli.problem };
   }
+  // The model tier runs only where a session can sign in. Without a
+  // credential it says so, and `--require-behavior` turns that into a failure.
+  if (check.tier === "behavior" && setup.behavior?.mode === "none") {
+    return { ...base, verdict: setup.behavior.required ? "error" : "skipped", reason: setup.behavior.required ? "no credential, and --require-behavior asks for the model tier" : "no credential", not_run: "no credential" };
+  }
 
   const runs = existsSync(dir) ? runNames(dir).map((name) => readRun(dir, name)) : [];
   const rules = runs.flatMap((run) => integrity(run, check, setup, stage));
+  // A key the API refused is not a plugin that failed, and not a tier that
+  // was skipped: nothing was judged.
+  if (check.tier === "behavior" && runs.some((run) => run.trace.assistantErrors().includes("authentication_failed"))) {
+    return { ...base, verdict: "error", reason: "credential present but rejected: the CLI reported authentication_failed on a call", integrity: rules, assertions: [] };
+  }
   let assertions = [];
   // A check that asks for no trace must not pass because none was there.
   let reason = runs.length ? null : "every trace is missing";
@@ -172,7 +194,9 @@ function judge(id, check, setup, stage, dir) {
     reason = `${error.message} is missing`;
   }
 
-  const failed = [...rules, ...assertions].filter((item) => !item.ok).map((item) => `${id}.${item.id}`);
+  // An `attempt` is one sample of a behavior the check's pass rule judges: it
+  // is evidence, and the rule's own assertion carries the verdict.
+  const failed = [...rules, ...assertions].filter((item) => !item.ok && !item.attempt).map((item) => `${id}.${item.id}`);
   return {
     ...base,
     verdict: failed.length ? "fail" : reason ? "unobservable" : "pass",
@@ -181,16 +205,24 @@ function judge(id, check, setup, stage, dir) {
     integrity: rules,
     assertions,
     observations: runs.flatMap(observations),
-    cost_usd: runs.reduce((sum, run) => sum + (run.trace.result()?.costUsd ?? 0), 0),
+    cost_usd: dollars(runs.reduce((sum, run) => sum + (run.trace.result()?.costUsd ?? 0), 0)),
+    model_calls: runs.reduce((sum, run) => sum + run.trace.modelCalls(), 0),
   };
 }
+
+const dollars = (amount) => Number(amount.toFixed(6));
 
 function tierSummary(tier, checks, cli) {
   const mine = checks.filter((check) => check.tier === tier);
   if (!mine.length) return `${tier} NOT BUILT`;
   if (!mine.some((check) => check.selected)) return `${tier} NOT RUN`;
   if (cli.problem) return `${tier}: ${cli.problem}`;
-  return `${tier} ${mine.filter((check) => check.verdict === "pass").length}/${mine.length}`;
+  const unrun = mine.find((check) => check.not_run);
+  if (unrun) return `${tier} NOT RUN: ${unrun.not_run}`;
+  const passed = `${tier} ${mine.filter((check) => check.verdict === "pass").length}/${mine.length}`;
+  // The first line of a run that called a model says what it cost.
+  const calls = mine.reduce((sum, check) => sum + (check.model_calls ?? 0), 0);
+  return tier === "behavior" ? `${passed} (${calls} model calls, $${dollars(mine.reduce((sum, check) => sum + (check.cost_usd ?? 0), 0)).toFixed(4)})` : passed;
 }
 
 // PASS is kept for a run in which every check passed against the CLI a user
@@ -199,7 +231,8 @@ function tierSummary(tier, checks, cli) {
 function word(checks, cli) {
   const passed = checks.filter((each) => each.verdict === "pass").length;
   if (checks.some((each) => FAILED.includes(each.verdict))) return "FAIL";
-  if (!passed) return "SKIPPED";
+  // A model tier that had no credential is a tier that did not run: never PASS.
+  if (!passed && !checks.some((each) => each.not_run)) return "SKIPPED";
   if (cli.stand_in) return "STAND-IN";
   return passed === checks.length ? "PASS" : "PARTIAL";
 }
@@ -219,9 +252,11 @@ export async function check(evidenceDir, checksDir = CHECKS_DIR) {
   const ids = [...new Set([...files, ...(setup.checks ?? [])].map((each) => each.id).concat(setup.selected, traced))].sort();
   const checks = ids.map((id) => judge(id, files.find((each) => each.id === id), setup, stage, join(traces, id)));
 
-  const verdict = word(checks, setup.cli);
+  const cost = dollars(checks.reduce((sum, each) => sum + (each.cost_usd ?? 0), 0));
+  // Billed cost over the budget fails the run whatever the checks found.
+  const verdict = cost > BUDGET_USD ? "FAIL" : word(checks, setup.cli);
   return {
-    line: `${verdict} ${TIERS.map((tier) => tierSummary(tier, checks, setup.cli)).join(" | ")} | round ${setup.round}`,
+    line: `${verdict} ${TIERS.map((tier) => tierSummary(tier, checks, setup.cli)).join(" | ")}${cost > BUDGET_USD ? ` | over the $${BUDGET_USD} budget` : ""} | round ${setup.round}`,
     verdict,
     run: setup.run,
     round: setup.round,
@@ -236,7 +271,9 @@ export async function check(evidenceDir, checksDir = CHECKS_DIR) {
     cli_path: setup.cli.real_path,
     cli_sha256: setup.cli.sha256,
     cli_stand_in: setup.cli.stand_in,
-    cost_usd: checks.reduce((sum, each) => sum + (each.cost_usd ?? 0), 0),
+    cost_usd: cost,
+    model_calls: checks.reduce((sum, each) => sum + (each.model_calls ?? 0), 0),
+    behavior: setup.behavior ?? null,
     checks,
   };
 }

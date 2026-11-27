@@ -7,11 +7,11 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { accessSync, closeSync, constants, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, realpathSync, rmSync, statSync } from "node:fs";
+import { accessSync, closeSync, constants, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, isAbsolute, join, relative } from "node:path";
 
-import { PRODUCT, WATCHED } from "./paths.mjs";
+import { BUDGET_USD, MAX_MODEL_CALLS, PRODUCT, WATCHED } from "./paths.mjs";
 import { sha256, stageHash, stageSeal } from "./stage.mjs";
 
 const PIN = JSON.parse(readFileSync(new URL("./cli-pin.json", import.meta.url), "utf8"));
@@ -89,14 +89,85 @@ export function childEnv(box, env = process.env) {
   return { ...Object.fromEntries(inherited), HOME: box.home, CLAUDE_CONFIG_DIR: box.config };
 }
 
-// One sandbox per run: two runs at once never share a config directory.
-export function plan(flows, base, env = process.env) {
-  return flows.flatMap((flow) =>
-    flow.runs.map((session) => {
-      const box = sandbox(join(base, flow.id, session.name));
-      return { id: flow.id, ...session, cwd: box.cwd, config: box.config, env: childEnv(box, env) };
-    }),
-  );
+// Credentials are handed on by name and only to the sessions that call a
+// model. Where neither is set, a session signs in as the person who runs the
+// verifier: their own home and config directory, and on macOS the USER the
+// keychain entry is filed under. Nothing else of the environment comes along.
+export const CREDENTIALS = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"];
+const LOGIN = ["USER"];
+
+function localEnv(env, box) {
+  const inherited = [...INHERITED, ...LOGIN, ...(env.CLAUDE_CONFIG_DIR ? ["CLAUDE_CONFIG_DIR"] : [])].filter((name) => env[name] !== undefined).map((name) => [name, env[name]]);
+  return { ...Object.fromEntries(inherited), HOME: env.HOME ?? box.home };
+}
+
+// How the model tier is signed in. `clean`: a throwaway home and config
+// directory with the credential from the environment, the way CI runs it.
+// `local`: the real login, found by `claude auth status`, which costs no
+// model call. `none`: neither, and the tier does not run. Only the names of
+// the variables are recorded, never a value.
+export function behaviorAccess(cli, box, env = process.env) {
+  const named = CREDENTIALS.filter((name) => env[name]);
+  if (named.length) return { mode: "clean", credential: named };
+  if (cli.problem || !env.HOME) return { mode: "none", credential: [] };
+  const probe = spawnSync(cli.path, ["auth", "status"], { env: localEnv(env, box), encoding: "utf8", timeout: 30_000 });
+  let status = null;
+  try {
+    status = JSON.parse(probe.stdout);
+  } catch {}
+  return { mode: status?.loggedIn === true ? "local" : "none", credential: [] };
+}
+
+function sessionEnv(box, tier, access, env) {
+  if (tier !== "behavior") return childEnv(box, env);
+  if (access.mode === "local") return localEnv(env, box);
+  return { ...childEnv(box, env), ...Object.fromEntries(access.credential.map((name) => [name, env[name]])) };
+}
+
+// What a flow may cost is in its arguments, so it is read from there.
+function cap(args, flag, flow) {
+  const at = args.indexOf(flag);
+  const value = at === -1 ? Number.NaN : Number(args[at + 1]);
+  if (!(value > 0)) throw new Error(`${flow} is a model-tier flow and must set ${flag} in its arguments`);
+  return value;
+}
+
+// The most the sessions may cost and call, from their own caps. A plan over
+// either limit is refused before any session starts.
+export function caps(sessions) {
+  const model = sessions.filter((session) => session.tier === "behavior");
+  const total = (flag) => model.reduce((sum, session) => sum + cap(session.args ?? [], flag, `${session.id}/${session.name}`), 0);
+  const found = { max_usd: Number(total("--max-budget-usd").toFixed(6)), max_turns: total("--max-turns") };
+  if (found.max_usd > BUDGET_USD) throw new Error(`the model tier plans up to $${found.max_usd}, over its budget of $${BUDGET_USD}`);
+  if (found.max_turns > MAX_MODEL_CALLS) throw new Error(`the model tier plans up to ${found.max_turns} model turns, over its limit of ${MAX_MODEL_CALLS}`);
+  return found;
+}
+
+// A flow's `files` make up the small project its sessions start in.
+function lay(cwd, files = {}) {
+  for (const [name, text] of Object.entries(files)) {
+    if (isAbsolute(name) || relative(cwd, join(cwd, name)).startsWith("..")) throw new Error(`a flow file may not leave its working directory: ${name}`);
+    mkdirSync(dirname(join(cwd, name)), { recursive: true });
+    writeFileSync(join(cwd, name), text);
+  }
+}
+
+// One sandbox per run: two runs at once never share a config directory. A
+// run's `vars` are the few variables that make up its condition, such as the
+// hook switched off. With no way to sign in, the model tier plans no session.
+export function plan(flows, base, env = process.env, access = { mode: "clean", credential: [] }) {
+  const sessions = flows
+    .filter((flow) => flow.tier !== "behavior" || access.mode !== "none")
+    .flatMap((flow) =>
+      flow.runs.map((session) => {
+        const box = sandbox(join(base, flow.id, session.name));
+        const local = flow.tier === "behavior" && access.mode === "local";
+        return { id: flow.id, tier: flow.tier, ...session, cwd: box.cwd, config: local ? null : box.config, env: { ...sessionEnv(box, flow.tier, access, env), ...session.vars } };
+      }),
+    );
+  caps(sessions);
+  for (const session of sessions) lay(session.cwd, session.files);
+  return sessions;
 }
 
 function executable(path) {

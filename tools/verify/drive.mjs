@@ -56,7 +56,9 @@ async function session(run, { cli, plugin, out }) {
   const file = (suffix) => join(dir, `${run.name}${suffix}`);
   writeFileSync(file(".jsonl"), trace);
   writeFileSync(file(".stderr"), Buffer.concat(stderr));
-  const transcript = transcripts(run.config);
+  // A session signed in as the person who runs the verifier has the real
+  // config directory, which holds sessions that are not this run's.
+  const transcript = run.config ? transcripts(run.config) : [];
   if (transcript.length) writeFileSync(file(".transcript.jsonl"), Buffer.concat(transcript));
   const sidecar = {
     argv,

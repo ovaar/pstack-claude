@@ -24,6 +24,13 @@ export const JUDGE = [
 export const STEERING = [".claude/skills/verify", ".agents/playbooks"];
 export const WATCHED = [...PRODUCT, ...JUDGE, ...STEERING];
 
+// The most a run of the model tier may cost, in dollars, and the most model
+// calls it plans. Setup refuses a plan whose caps add up to more, and the
+// checker fails a run whose billed cost went over: a model tier that can be
+// left running is not one to run on every change.
+export const BUDGET_USD = 0.5;
+export const MAX_MODEL_CALLS = 25;
+
 const here = dirname(fileURLToPath(import.meta.url));
 export const FLOWS_DIR = join(here, "flows");
 export const CHECKS_DIR = join(here, "checks");
