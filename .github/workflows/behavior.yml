@@ -39,12 +39,23 @@ jobs:
             exit 1
           fi
           npm install -g "@anthropic-ai/claude-code@$version"
-          claude --version
+          # The verifier checks only a minimum, so a different claude earlier
+          # on PATH would be tested without anyone noticing.
+          actual=$(claude --version)
+          if [ "$actual" != "$version (Claude Code)" ]; then
+            echo "::error title=Wrong Claude Code on PATH::claude on PATH is $actual, the pin is $version"
+            exit 1
+          fi
+          echo "$actual"
       # No model call and no secret: the surface tier starts the CLI to read
       # its startup events and never sends a prompt. The verifier prints its
-      # verdict first. Only PASS passes. SKIPPED, PARTIAL and STAND-IN exit 0
-      # from the verifier, and here each means a check did not judge the CLI
-      # a user has. PSTACK_VERIFY_REQUIRE_CLI turns a missing CLI into FAIL.
+      # verdict first. SKIPPED, STAND-IN and FAIL are failures here (the
+      # first two exit 0 from the verifier, and each means a check did not
+      # judge the CLI a user has). PSTACK_VERIFY_REQUIRE_CLI turns a missing
+      # CLI into FAIL. --tier surface leaves later tiers out, so once a
+      # behavior check exists the verifier prints PARTIAL for them. That
+      # passes only when every surface check passed and each other tier is
+      # NOT RUN or NOT BUILT; a PARTIAL with a surface check missing fails.
       # Evidence goes outside the checkout.
       - name: Verify the plugin loads and starts in Claude Code
         env:
@@ -58,7 +69,17 @@ jobs:
             exit "$status"
           fi
           first=$(head -n 1 "$RUNNER_TEMP/verdict.txt")
-          if [[ $first != PASS\ * ]]; then
+          ok=0
+          if [[ $first == PASS\ * ]]; then
+            ok=1
+          elif [[ $first =~ ^PARTIAL\ surface\ ([1-9][0-9]*)/([0-9]+)\ \|\ (.*)\ \|\ round\ [0-9]+$ ]] && [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[2]}" ]; then
+            ok=1
+            IFS='|' read -ra others <<< "${BASH_REMATCH[3]}"
+            for other in "${others[@]}"; do
+              [[ $other =~ ^\ ?[a-z]+\ NOT\ (RUN|BUILT)\ ?$ ]] || ok=0
+            done
+          fi
+          if [ "$ok" -ne 1 ]; then
             echo "::error title=Surface checks not PASS::$first"
             exit 1
           fi
@@ -76,4 +97,5 @@ jobs:
           name: claude-surface-evidence
           path: ${{ runner.temp }}/verify
           if-no-files-found: warn
+          include-hidden-files: true
           retention-days: 14

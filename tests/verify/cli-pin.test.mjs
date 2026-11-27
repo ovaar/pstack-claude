@@ -75,7 +75,7 @@ describe("every action", () => {
 describe.skipIf(!Bun.which("jq"))("the install step", () => {
   const step = stepsOf(behavior).find((each) => each.run?.includes("npm install"));
 
-  function run(pinFile) {
+  function run(pinFile, reported) {
     const dir = mkdtempSync(join(tmpdir(), "pstack-cli-pin-"));
     try {
       mkdirSync(join(dir, "tools/verify"), { recursive: true });
@@ -83,7 +83,7 @@ describe.skipIf(!Bun.which("jq"))("the install step", () => {
       writeFileSync(join(dir, "tools/verify/cli-pin.json"), pinFile);
       writeFileSync(join(dir, "step.sh"), step.run);
       writeFileSync(join(dir, "bin/npm"), '#!/bin/bash\necho "$*" >> "$CALLS"\n', { mode: 0o755 });
-      writeFileSync(join(dir, "bin/claude"), "#!/bin/bash\necho stub\n", { mode: 0o755 });
+      writeFileSync(join(dir, "bin/claude"), `#!/bin/bash\necho "${reported ?? JSON.parse(pinFile).verified ?? "x"} (Claude Code)"\n`, { mode: 0o755 });
       writeFileSync(join(dir, "calls"), "");
       const { status } = spawnSync("bash", ["-e", "step.sh"], { cwd: dir, env: { PATH: `${join(dir, "bin")}:${process.env.PATH}`, CALLS: join(dir, "calls") }, encoding: "utf8" });
       return { passed: status === 0, calls: readFileSync(join(dir, "calls"), "utf8").split("\n").filter(Boolean) };
@@ -95,6 +95,12 @@ describe.skipIf(!Bun.which("jq"))("the install step", () => {
   test("installs the version the file names, whatever it is", () => {
     expect(run(JSON.stringify({ verified: pin.verified, minimum: pin.minimum }))).toEqual({ passed: true, calls: [`install -g @anthropic-ai/claude-code@${pin.verified}`] });
     expect(run(JSON.stringify({ verified: "9.8.7", minimum: "9.8.7" }))).toEqual({ passed: true, calls: ["install -g @anthropic-ai/claude-code@9.8.7"] });
+  });
+
+  test("fails when the claude on PATH is not the pinned version", () => {
+    const file = JSON.stringify({ verified: pin.verified, minimum: pin.minimum });
+    expect(run(file, "2.1.400").passed).toBe(false);
+    expect(run(file, pin.verified).passed).toBe(true);
   });
 
   test("fails, with no install, when the file names no usable version", () => {

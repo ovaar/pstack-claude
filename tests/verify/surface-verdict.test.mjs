@@ -30,8 +30,44 @@ function run(line, exit) {
 }
 
 describe("the surface job's verdict", () => {
+  const job = Object.values(workflow.jobs)[0];
+
+  test("cannot be turned green around the verdict: no continue-on-error, no condition, no needs", () => {
+    expect(Object.keys(workflow.jobs)).toHaveLength(1);
+    expect(job.steps).toBeDefined();
+    for (const key of ["continue-on-error", "if", "needs", "uses"]) expect(job).not.toHaveProperty(key);
+    expect(step).not.toHaveProperty("continue-on-error");
+    expect(step).not.toHaveProperty("if");
+    expect(step).not.toHaveProperty("shell");
+    expect(step.run).not.toMatch(/\|\|\s*true/);
+    expect(workflow.defaults?.run).toBeUndefined();
+  });
+
+  test("evidence upload keeps the hidden files of the stage", () => {
+    const upload = job.steps.find((each) => each.uses?.startsWith("actions/upload-artifact@"));
+    expect(upload.with["include-hidden-files"]).toBe(true);
+  });
+
   test("passes on a PASS line", () => {
     expect(run("PASS surface 2/2 | behavior NOT BUILT | round 1", 0).passed).toBe(true);
+  });
+
+  test.each(["PARTIAL surface 2/2 | behavior NOT RUN | round 1", "PARTIAL surface 1/1 | behavior NOT BUILT | round 3"])("passes on %p: every surface check passed and the other tier was only left out", (line) => {
+    expect(run(line, 0).passed).toBe(true);
+  });
+
+  test.each([
+    "PARTIAL surface 1/2 | behavior NOT RUN | round 1",
+    "PARTIAL surface 0/0 | behavior NOT RUN | round 1",
+    "PARTIAL surface 2/2 | behavior 0/5 | round 1",
+    "PARTIAL surface 2/2 | behavior 3/5 | round 1",
+    "PARTIAL surface NOT RUN | behavior NOT RUN | round 1",
+    "PARTIAL surface: claude is too old | behavior NOT RUN | round 1",
+    "PARTIAL behavior 2/2 | surface NOT RUN | round 1",
+    "PARTIAL surface 2/2 | behavior NOT RUN",
+    "PARTIAL surface 2/2 | behavior NOT RUN | extra | round 1",
+  ])("fails on %p", (line) => {
+    expect(run(line, 0).passed).toBe(false);
   });
 
   test.each(["SKIPPED surface: claude is not on PATH", "PARTIAL surface 2/2 | behavior 0/5", "STAND-IN surface 2/2", "FAIL surface 1/2", "", "pass surface 2/2", "PASSED"])("fails on %p", (line) => {
