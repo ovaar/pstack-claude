@@ -5,7 +5,7 @@
 // the controls beside them (no watched path, no push, a bypass) must not be.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 
 import { BYPASS_LINE, decide, hitsOf, isWatched, judgeLine, prePushHits, segments } from "../../tools/verify/gate.mjs";
@@ -381,4 +381,22 @@ test.skipIf(process.platform === "win32")("a real git pre-push hook stops `git p
   unwatchedChange(repo);
   const clean = spawnSync("git", ["-C", repo, "push", "origin", "HEAD:refs/heads/main"], { encoding: "utf8", env });
   expect(clean.status).toBe(0);
+}, LONG);
+
+test.skipIf(process.platform === "win32")("the project settings register the hook on Bash, and the command they name runs and blocks", () => {
+  const root = join(import.meta.dir, "../..");
+  const settings = JSON.parse(readFileSync(join(root, ".claude/settings.json"), "utf8"));
+  expect(Object.keys(settings)).toEqual(["hooks"]);
+  const entries = settings.hooks.PreToolUse;
+  expect(entries).toHaveLength(1);
+  expect(entries[0].matcher).toBe("Bash");
+  const [{ type, command, timeout }] = entries[0].hooks;
+  expect([type, timeout >= 300]).toEqual(["command", true]);
+  // Claude Code runs the command through a shell with CLAUDE_PROJECT_DIR set, and the payload on stdin.
+  const { repo } = pushable();
+  watchedChange(repo);
+  const payload = JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "git push" }, cwd: repo });
+  const env = { PATH, HOME: tmp, TMPDIR: tmp, PSTACK_VERIFY_CLAUDE: FAKE_CLI, CLAUDE_PROJECT_DIR: root };
+  expect(spawnSync("/bin/sh", ["-c", command], { input: payload, encoding: "utf8", env }).status).toBe(2);
+  expect(spawnSync("/bin/sh", ["-c", command], { input: payload.replace("git push", "git status"), encoding: "utf8", env }).status).toBe(0);
 }, LONG);
