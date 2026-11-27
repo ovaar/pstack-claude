@@ -1,6 +1,6 @@
 // Turns a trace from a real run into a fixture fit for a public repository.
 //
-//   bun tests/verify/scrub.mjs <run-directory> <check>/<run> <fixture-name> [transcript]
+//   bun tests/verify/scrub.mjs <run-directory> <check>/<run> <fixture-name> [transcript|reduced]
 //
 // The run directory is the one `bun tools/verify.mjs` prints as `evidence:`.
 // The stage path becomes <STAGE> and the sessions' directory <SANDBOX>, which
@@ -9,7 +9,10 @@
 // is kept as a single line, a stream that repeats its init event keeps the
 // first, and with `transcript` the session's transcript is reduced to the user
 // lines and the records of an unknown command, each user line to the first
-// line of each of its text blocks: a skill's own text is not a fixture.
+// line of each of its text blocks: a skill's own text is not a fixture. With
+// `reduced` the stream of a run that types many messages keeps of each
+// assistant and result event only what trace.mjs reads, so that sixty-nine
+// exchanges fit in a fixture.
 // `leaks` is what
 // tests/verify/fixtures-clean.test.mjs holds every fixture to.
 
@@ -87,6 +90,26 @@ export function firstInit(text) {
     .join("\n");
 }
 
+// What trace.mjs reads of an assistant and a result event, and nothing else:
+// the model, the tool uses, and the fields of the result. What a model wrote
+// is not read, so it is not kept.
+// The events that carry nothing a check reads are the bulk of a long stream.
+export function reduceStream(text) {
+  return text
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const event = JSON.parse(line);
+      if (event.type === "assistant") return { type: "assistant", message: { model: event.message?.model, content: (event.message?.content ?? []).filter((block) => block.type === "tool_use") } };
+      if (event.type !== "result") return event;
+      const { type, subtype, is_error, total_cost_usd, num_turns, permission_denials, result } = event;
+      const by_type = event.subagent_stats?.by_type;
+      return { type, subtype, is_error, total_cost_usd, num_turns, modelUsage: Object.fromEntries(Object.keys(event.modelUsage ?? {}).map((model) => [model, {}])), permission_denials, ...(by_type ? { subagent_stats: { by_type } } : {}), result };
+    })
+    .map((event) => `${JSON.stringify(event)}\n`)
+    .join("");
+}
+
 const head = (text) => text.split("\n")[0];
 
 export function reduceTranscript(text) {
@@ -107,14 +130,15 @@ export function reduceTranscript(text) {
 
 if (isMain(import.meta.url)) {
   const [run, trace, name, transcript] = process.argv.slice(2);
-  if (!name || (transcript !== undefined && transcript !== "transcript")) {
-    console.error("usage: bun tests/verify/scrub.mjs <run-directory> <check>/<run> <fixture-name> [transcript]");
+  if (!name || (transcript !== undefined && !["transcript", "reduced"].includes(transcript))) {
+    console.error("usage: bun tests/verify/scrub.mjs <run-directory> <check>/<run> <fixture-name> [transcript|reduced]");
     process.exit(2);
   }
   const { stage, sandbox } = JSON.parse(readFileSync(join(run, "setup.json"), "utf8"));
-  const read = readFileSync(join(run, "traces", transcript ? `${trace}.transcript.jsonl` : `${trace}.jsonl`), "utf8");
-  const fixture = scrub(transcript ? reduceTranscript(read) : firstInit(compact(read)), stage, sandbox);
-  const file = transcript ? `${name}.transcript.jsonl` : `${name}.jsonl`;
+  const read = readFileSync(join(run, "traces", transcript === "transcript" ? `${trace}.transcript.jsonl` : `${trace}.jsonl`), "utf8");
+  const kept = transcript === "transcript" ? reduceTranscript(read) : transcript === "reduced" ? reduceStream(firstInit(read)) : firstInit(compact(read));
+  const fixture = scrub(kept, stage, sandbox);
+  const file = transcript === "transcript" ? `${name}.transcript.jsonl` : `${name}.jsonl`;
   const found = leaks(fixture, undefined, undefined, { strict: true });
   if (found.length) {
     console.error(`FAIL: the scrubbed trace still holds ${found.join(", ")}`);

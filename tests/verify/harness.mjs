@@ -120,10 +120,10 @@ export function evidence({ checks, runs, skills, tree = { skills } }, edits = {}
     const fixture = edit.fixture ?? run.fixture;
     const named = (text) => text.replaceAll("<STAGE>", stage).replaceAll("<SANDBOX>", sandbox);
     const events = eventsOf(named(recorded(fixture)));
-    const transcript = existsSync(join(FIXTURES, `${fixture}.transcript.jsonl`)) ? named(recorded(`${fixture}.transcript`)) : null;
+    const transcript = existsSync(join(FIXTURES, `${fixture}.transcript.jsonl`)) ? recorded(`${fixture}.transcript`) : null;
     // Setup plans a session where the recorded one ran.
     const cwd = events.find((event) => event.subtype === "init")?.cwd ?? join(sandbox, run.check, run.name, "cwd");
-    return { ...run, edit, events, cwd, transcript };
+    return { ...run, edit, events, cwd, transcript, named };
   });
   const setup = {
     run: "fixture",
@@ -145,15 +145,17 @@ export function evidence({ checks, runs, skills, tree = { skills } }, edits = {}
   writeFileSync(join(dir, "setup.json"), JSON.stringify(setup));
   edits.moved?.(stage);
 
-  for (const { check, name, args, command, env = {}, edit, events, transcript } of sessions) {
+  for (const { check, name, args, command, env = {}, edit, events, transcript, named } of sessions) {
     if (edit.absent) continue;
     const text = (edit.events?.(events) ?? events).map((event) => `${JSON.stringify(event)}\n`).join("");
     const trace = edit.raw?.(text) ?? text;
     const file = (suffix) => join(dir, "traces", check, `${name}${suffix}`);
     mkdirSync(join(dir, "traces", check), { recursive: true });
     writeFileSync(file(".jsonl"), trace);
-    const lines = edit.transcript ?? transcript;
-    if (lines) writeFileSync(file(".transcript.jsonl"), edit.transcriptEdit ? edit.transcriptEdit(lines) : lines);
+    // A recorded transcript names the stage and the sandbox as placeholders,
+    // which an edit of it sees as they are.
+    const lines = edit.transcript ?? (transcript && named(edit.transcriptEdit ? edit.transcriptEdit(transcript) : transcript));
+    if (lines) writeFileSync(file(".transcript.jsonl"), lines);
     if (edit.stderr) writeFileSync(file(".stderr"), edit.stderr);
     const places = { "<plugin>": join(stage, PLUGIN), "<stage>": stage };
     const started = command ? [setup.cli.path, ...command.map((word) => places[word] ?? word)] : [setup.cli.path, "-p", "--plugin-dir", join(stage, PLUGIN), "--model", "haiku", "--output-format", "stream-json", "--verbose", ...args];
