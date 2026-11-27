@@ -5,16 +5,21 @@
 // body of the skill tells the model to hand a brief to one subagent: when that
 // brief, taken from the stage's skills/how/SKILL.md, is in an Agent call's
 // prompt, the body was loaded, because nothing else holds those words. The
-// second is the model's choice, so it is sampled.
+// second is the model's choice, so it is sampled. A hook refuses the dispatch
+// once its tool_use is in the stream, so the subagent never runs and its
+// calls, which --max-turns does not bound, never reach the bill.
 export const title = "a typed /pstack:how is expanded and its brief reaches a subagent";
 export const tier = "behavior";
 // The pass rule. A model is not deterministic, so each behavior is sampled
 // and the check passes on this many attempts, every one of them in the evidence.
-export const rule = { attempts: 2, needs: 1 };
+export const rule = { attempts: 3, needs: 2 };
 
 // The command is typed on stdin as a user message, so it is not an argument.
-const ARGS = ["--max-turns", "1", "--max-budget-usd", "0.03", "--setting-sources", "", "--strict-mcp-config", "--no-session-persistence", "--input-format", "stream-json", "--replay-user-messages"];
-export const args = { "attempt-1": ARGS, "attempt-2": ARGS };
+const REFUSE_DISPATCH = JSON.stringify({
+  hooks: { PreToolUse: [{ matcher: "Agent|Task", hooks: [{ type: "command", command: `echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"verifier: the dispatch is recorded, not run"}}'` }] }] },
+});
+const ARGS = ["--max-turns", "1", "--max-budget-usd", "0.03", "--setting-sources", "", "--strict-mcp-config", "--no-session-persistence", "--settings", REFUSE_DISPATCH, "--input-format", "stream-json", "--replay-user-messages"];
+export const args = { "attempt-1": ARGS, "attempt-2": ARGS, "attempt-3": ARGS };
 
 const HOOK = "SessionStart:startup";
 const ENDED = ["success", "error_max_turns"];

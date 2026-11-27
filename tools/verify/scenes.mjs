@@ -25,6 +25,13 @@ export const HOW_COMMAND = "/pstack:how how does order_total in totals.py work?"
 // with their login, and nothing is written to their transcripts.
 export const LIMITS = ["--max-turns", "1", "--max-budget-usd", "0.03", "--setting-sources", "", "--strict-mcp-config", "--no-session-persistence"];
 
+// A subagent's calls are its own, outside --max-turns, and one dispatch made
+// eight of them. A hook that refuses the dispatch leaves the call in the
+// stream, which is all a check reads, and stops the cost there.
+export const REFUSE_DISPATCH = JSON.stringify({
+  hooks: { PreToolUse: [{ matcher: "Agent|Task", hooks: [{ type: "command", command: `echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"verifier: the dispatch is recorded, not run"}}'` }] }] },
+});
+
 export const TIMEOUT_MS = 120_000;
 export const attempts = (count, make) => Array.from({ length: count }, (_, at) => ({ name: `attempt-${at + 1}`, timeoutMs: TIMEOUT_MS, ...make(at + 1) }));
 

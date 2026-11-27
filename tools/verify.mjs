@@ -47,7 +47,7 @@ import { check, TIERS } from "./verify/check.mjs";
 import { drive } from "./verify/drive.mjs";
 import { nextRound, prune, recordRound, writeEvidence } from "./verify/evidence.mjs";
 import { CHECKS_DIR, checkShape, FLOWS_DIR, flowShape, loadDir } from "./verify/paths.mjs";
-import { behaviorAccess, buildStage, caps, doctor, evidenceRoot, plan, sandbox, sandboxBase, snapshot } from "./verify/setup.mjs";
+import { behaviorAccess, buildStage, caps, doctor, evidenceRoot, forgetProjects, plan, sandbox, sandboxBase, snapshot } from "./verify/setup.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const USAGE = `usage: bun tools/verify.mjs [--tier ${TIERS.join("|")}|all] [--flow <id>] [--tree <checkout>] [--evidence <dir>] [--jobs 1-3] [--require-behavior]
@@ -111,12 +111,13 @@ async function verify(options) {
   // directories, and this one has to be among those it counts.
   mkdirSync(dir, { recursive: true });
   const base = sandboxBase();
+  let sessions = [];
   try {
     const { stage, stageHash, stageSeal } = buildStage(snap, join(dir, "stage"));
     const cli = doctor(sandbox(join(base, "doctor")));
     const wantsModel = selected.some((flow) => flow.tier === "behavior");
     const access = wantsModel && !cli.problem ? behaviorAccess(cli, sandbox(join(base, "access"))) : { mode: "none", credential: [] };
-    const sessions = cli.problem ? [] : plan(selected, base, process.env, access);
+    sessions = cli.problem ? [] : plan(selected, base, process.env, access);
     const setup = {
       behavior: wantsModel ? { ...access, required: options.requireBehavior, planned: caps(sessions) } : null,
       run,
@@ -140,6 +141,7 @@ async function verify(options) {
     if (!existsSync(join(dir, "setup.json"))) rmSync(dir, { recursive: true, force: true });
     throw err;
   } finally {
+    forgetProjects(sessions);
     rmSync(base, { recursive: true, force: true });
   }
 

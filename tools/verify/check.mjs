@@ -12,7 +12,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { PLUGIN } from "../plugin.mjs";
-import { BUDGET_USD, CHECKS_DIR, loadDir } from "./paths.mjs";
+import { BUDGET_USD, CHECKS_DIR, loadDir, MAX_MODEL_CALLS } from "./paths.mjs";
 import { sha256, stageHash, stageSeal } from "./stage.mjs";
 import { readRun, runNames } from "./trace.mjs";
 
@@ -254,9 +254,13 @@ export async function check(evidenceDir, checksDir = CHECKS_DIR) {
 
   const cost = dollars(checks.reduce((sum, each) => sum + (each.cost_usd ?? 0), 0));
   // Billed cost over the budget fails the run whatever the checks found.
-  const verdict = cost > BUDGET_USD ? "FAIL" : word(checks, setup.cli);
+  // So does a run that called a model more often than the limit: a plan caps
+  // each session's turns, but a subagent's calls are its own.
+  const calls = checks.reduce((sum, each) => sum + (each.model_calls ?? 0), 0);
+  const over = [...(cost > BUDGET_USD ? [`over the $${BUDGET_USD} budget`] : []), ...(calls > MAX_MODEL_CALLS ? [`over the ${MAX_MODEL_CALLS} model call limit`] : [])];
+  const verdict = over.length ? "FAIL" : word(checks, setup.cli);
   return {
-    line: `${verdict} ${TIERS.map((tier) => tierSummary(tier, checks, setup.cli)).join(" | ")}${cost > BUDGET_USD ? ` | over the $${BUDGET_USD} budget` : ""} | round ${setup.round}`,
+    line: `${verdict} ${TIERS.map((tier) => tierSummary(tier, checks, setup.cli)).join(" | ")}${over.map((each) => ` | ${each}`).join("")} | round ${setup.round}`,
     verdict,
     run: setup.run,
     round: setup.round,
@@ -272,7 +276,7 @@ export async function check(evidenceDir, checksDir = CHECKS_DIR) {
     cli_sha256: setup.cli.sha256,
     cli_stand_in: setup.cli.stand_in,
     cost_usd: cost,
-    model_calls: checks.reduce((sum, each) => sum + (each.model_calls ?? 0), 0),
+    model_calls: calls,
     behavior: setup.behavior ?? null,
     checks,
   };

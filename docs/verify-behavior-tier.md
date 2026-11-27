@@ -8,13 +8,13 @@
 - In CI, or to use another account, set `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`. The sessions get a throwaway home and config directory, and the variable by name. Evidence records only the names.
 - With neither a variable nor a login, the first line reads `behavior NOT RUN: no credential` and the word is PARTIAL, never PASS. `--require-behavior` makes it FAIL.
 - A credential the API refuses is an error that says `credential present but rejected`, not a skipped tier.
-- The first line carries the model calls and the cost: `PASS surface 2/2 | behavior 5/5 (26 model calls, $0.0538) | round 1`.
+- The first line carries the model calls and the cost: `PASS surface 2/2 | behavior 5/5 (15 model calls, $0.0459) | round 1`.
 
 ## What it may cost
 
-Every session sets `--max-turns 1`, `--max-budget-usd 0.03` and a time limit. Setup refuses a plan whose caps add up to more than `BUDGET_USD` ($0.50) or `MAX_MODEL_CALLS` (25 turns) in `tools/verify/paths.mjs`, and the checker fails a run whose billed cost went over. The shipped plan is 14 sessions, at most $0.42.
+Every session sets `--max-turns 1`, `--max-budget-usd 0.03` and a time limit. Setup refuses a plan whose caps add up to more than `BUDGET_USD` ($0.50) or `MAX_MODEL_CALLS` (25 turns) in `tools/verify/paths.mjs`, and the checker fails a run whose billed cost went over `BUDGET_USD` or whose model calls, counted from the distinct message ids in the traces, went over `MAX_MODEL_CALLS`; the first line then ends in `over the $0.5 budget` or `over the 25 model call limit`. The shipped plan is 15 sessions, at most $0.45.
 
-A turn limit does not bound a subagent, so B4's two sessions carry the subagent's own calls. Measured on CLI 2.1.332 and haiku, a full run was 26 model calls and $0.054, and the two planted-mistake runs were 12 calls ($0.035) and 14 calls ($0.042).
+A turn limit does not bound a subagent: an earlier B4 let its dispatch run, and one attempt made eight calls through it (a run was 26 calls, over the limit, and nothing failed it). B4 now passes `--settings` with a `PreToolUse` hook that denies `Agent|Task`. The call stays in the stream, which is all the check reads, and the subagent never runs. Measured on CLI 2.1.332 and haiku, a full run is 15 model calls (one per session) and $0.046. Sessions signed in locally also leave an empty project directory in your real config directory; the run removes those, and only those named after its own sandbox and holding no file.
 
 ## The checks
 
@@ -25,7 +25,7 @@ A model is not deterministic, so each check samples attempts, states its pass ru
 | B1 | a bug across three files, with a signature to change | the session called the Skill tool for `pstack:poteto-mode`, it came back without an error, and no Edit or Write came first | 2 of 3 |
 | B2 | which git command lists the files changed in the last commit | no Skill call for `pstack:poteto-mode` | 2 of 3 |
 | B3 | use `pstack:why` to explain a design choice | a loaded Skill call for `pstack:why` | 2 of 3 |
-| B4 | a typed `/pstack:how ...` | an Agent call whose prompt holds the brief from the stage's `skills/how/SKILL.md` | 1 of 2 |
+| B4 | a typed `/pstack:how ...` | an Agent call whose prompt holds the brief from the stage's `skills/how/SKILL.md` | 2 of 3 |
 | B5 | B1's prompt, with `PSTACK_SESSION_HOOK=off` | no Skill call for `pstack:poteto-mode` | 2 of 3 |
 
 Alongside the rule, each check holds a few things true of every attempt: the mandate arrived (B1 to B3: the hook exited 0 with a mandate on stdout), or the hook was off (B5: it exited 0 with nothing), and the session ended in `success` or `error_max_turns`. Every model-tier run also passes the integrity rules: billed above $0, a real model id, every tool result matching a tool call, and the declared arguments.
@@ -35,7 +35,7 @@ Read B1 with B5. B5 changes one thing from B1, the hook, which a test pins (the 
 ### What the stream shows (CLI 2.1.332)
 
 - A model-invoked skill is a `tool_use` named `Skill` with `{"skill": "pstack:<name>"}`, then a `tool_result` of `Launching skill: pstack:<name>` with no `is_error`, then a synthetic user message that starts `Base directory for this skill:`. One turn is enough to see all three.
-- A typed `/pstack:how` shows no `Skill` call. The harness resolves it before the model: with `--input-format stream-json --replay-user-messages` the replayed user message holds `<command-name>/pstack:how</command-name>`, and for an unknown name it holds the raw text. That is B4's deterministic half. Its sampled half is the model's first move: the skill's body tells it to hand a brief to one subagent, and the brief reaches an `Agent` call's prompt in 5 of 7 probe sessions, and 2 of 2 in the run. Nothing else holds those words, so it shows the body was loaded.
+- A typed `/pstack:how` shows no `Skill` call. The harness resolves it before the model: with `--input-format stream-json --replay-user-messages` the replayed user message holds `<command-name>/pstack:how</command-name>`, and for an unknown name it holds the raw text. That is B4's deterministic half. Its sampled half is the model's first move: the skill's body tells it to hand a brief to one subagent, and the brief reaches an `Agent` call's prompt in 5 of 7 probe sessions, and 3 of 3 in the run. Nothing else holds those words, so it shows the body was loaded.
 - A call the API refuses is an assistant message the CLI wrote itself, with `error: "authentication_failed"`, a synthetic model, a cost of 0 and `terminal_reason: "api_error"`. The exit code is 1 and the result subtype is `success`, so neither is a verdict.
 - A session stopped by `--max-turns` has result subtype `error_max_turns`, `is_error` true and exit code 1. That is expected here.
 - A denied Edit or Write is still a `tool_use` block, so a session that edits first is seen without letting it edit.
@@ -55,11 +55,11 @@ A signed-in trace carries account data: the user name in a directory listing, ho
 bun tests/verify/scrub.mjs <run-directory> B1/attempt-1 untouched.B1.attempt-1
 ```
 
-It drops rate-limit events, progress noise and repeated init events, cuts any text over 1200 characters (except the init event and hook responses, which checks read whole), and replaces the stage, the sandbox, the home directory, the user and machine names, emails and every UUID. An organisation's name is not something the tool can know, so name it in `PSTACK_SCRUB_NAMES` (a comma list) when recording from an account that has one. `leaks()` in `tests/verify/scrub.mjs` refuses any fixture that still holds the user or machine name as a whole word in any case (except generic account words such as `user`, `root` and `test`), any UUID that does not start with `00000000-0000-4000-8000-`, an email, a token, a home path or a temp directory. The live traces stay under the git directory with the run, never in the working tree, and only the redacted `evidence.md` is for pasting.
+It drops rate-limit events, progress noise and repeated init events, cuts any text over 1200 characters (except the init event and hook responses, which checks read whole), and replaces the stage, the sandbox, the home directory, the user and machine names, emails every UUID, and the server-side ids a signed-in trace carries (`req_`, `msg_` and `toolu_` ids, and the `agent_id`, `task_id` and `run_id` of a background agent), which are renumbered so a result still points at its call and a message id still counts as one call. An organisation's name is not something the tool can know, so name it in `PSTACK_SCRUB_NAMES` (a comma list) when recording from an account that has one. `leaks()` in `tests/verify/scrub.mjs` refuses any fixture that still holds the user or machine name as a whole word in any case however short it is (only generic account words such as `user`, `root` and `test` are let through), any UUID that does not start with `00000000-0000-4000-8000-`, any server-side id that is not a placeholder, an email, a token, a home path or a temp directory. The live traces stay under the git directory with the run, never in the working tree, and only the redacted `evidence.md` is for pasting.
 
 ## Honesty
 
-The fixtures include sessions that routed (B1), sessions that did not (B5, B2), and a refusal. The tests under `tests/verify/checks/B*.test.mjs` start from them and doctor one fact each, and the doctored trace must fail:
+The fixtures include sessions that routed (B1), sessions that did not (B5, B2), and a subagent dispatch the hook refused (B4). A refused API call is not recorded: `doctor.mjs` writes that trace. The tests under `tests/verify/checks/B*.test.mjs` start from them and doctor one fact each, and the doctored trace must fail:
 
 - a session that says it ran the skill with no `Skill` call (the old `SKILL-RAN` text match would pass it)
 - a `Skill` call whose `tool_result` has `is_error` true while the process exits 0
@@ -84,3 +84,4 @@ This unit adds none. A later unit should add a workflow file of its own, never a
 - The tier has not run on Linux or in CI, and not with a real token in a throwaway config directory. The clean mode is covered by the stand-in and by a dummy key (`credential present but rejected`, measured with a zero-cost call).
 - The rates are small samples on the `haiku` alias, which will point at other models over time. The evidence records the model id and the sample size.
 - Every recorded session is from one machine and one account.
+- B4's rate is the least certain: its subagent brief reached an `Agent` call in 5 of 7 earlier probe sessions and in 3 of 3 of the last run. At about 70 percent a rule of 2 of 3 would miss about one run in five, so a red B4 alone is rerun before it is read as a regression.

@@ -255,10 +255,10 @@ test.skipIf(process.platform === "win32")("a credential in the environment signs
   expect(run.status).toBe(0);
   const [dir] = runsOf(root);
   expect(run.stdout).toContain("- model tier: signed in by ANTHROPIC_API_KEY in a throwaway config directory;");
-  expect(json(join(dir, "setup.json")).behavior).toMatchObject({ mode: "clean", credential: ["ANTHROPIC_API_KEY"], required: false, planned: { max_usd: 0.42, max_turns: 14 } });
+  expect(json(join(dir, "setup.json")).behavior).toMatchObject({ mode: "clean", credential: ["ANTHROPIC_API_KEY"], required: false, planned: { max_usd: 0.45, max_turns: 15 } });
 
   const names = (trace) => json(`${trace}.sidecar.json`).env;
-  expect(modelRuns(dir).length).toBe(14);
+  expect(modelRuns(dir).length).toBe(15);
   const condition = (trace) => (trace.includes("/B5/") ? ["PSTACK_SESSION_HOOK"] : []);
   for (const trace of modelRuns(dir)) expect(names(trace)).toEqual([...SESSION_VARIABLES, "ANTHROPIC_API_KEY", ...condition(trace)].sort());
   for (const trace of tracesOf(dir).filter((each) => !modelRuns(dir).includes(each))) expect(names(trace)).toEqual(SESSION_VARIABLES);

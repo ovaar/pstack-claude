@@ -3,12 +3,12 @@
 // it did not run, and that the flows under it stay inside their caps. What
 // each behavior check judges is in tests/verify/checks/B*.test.mjs.
 import { afterEach, describe, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { check } from "../../tools/verify/check.mjs";
 import { BUDGET_USD, CHECKS_DIR, FLOWS_DIR, loadDir, MAX_MODEL_CALLS } from "../../tools/verify/paths.mjs";
-import { behaviorAccess, caps, CREDENTIALS, plan } from "../../tools/verify/setup.mjs";
+import { behaviorAccess, caps, CREDENTIALS, forgetProjects, plan } from "../../tools/verify/setup.mjs";
 import { cleanup, evidence, shipped, tempDir } from "./harness.mjs";
 import { lastResult } from "./doctor.mjs";
 
@@ -27,7 +27,7 @@ describe("what the model tier may cost", () => {
     const planned = caps(plan(model, tempDir()));
     expect(planned.max_usd).toBeLessThanOrEqual(BUDGET_USD);
     expect(planned.max_turns).toBeLessThanOrEqual(MAX_MODEL_CALLS);
-    expect(planned).toEqual({ max_usd: 0.42, max_turns: 14 });
+    expect(planned).toEqual({ max_usd: 0.45, max_turns: 15 });
   });
 
   test.each([
@@ -165,6 +165,28 @@ describe("what the first line says", () => {
     expect(judged.line).toMatch(/^PASS surface 2\/2 \| behavior 5\/5 \(\d+ model calls, \$0\.\d{4}\) \| round 1$/);
   });
 
+  // A subagent's calls are outside --max-turns, so the plan cannot bound them.
+  test("a run that made more model calls than the limit fails whatever its checks found, and says so", async () => {
+    const B1 = await shipped("B1");
+    const extra = (events) => {
+      const at = events.findIndex((event) => event.type === "result");
+      const calls = Array.from({ length: MAX_MODEL_CALLS }, (_, n) => ({ type: "assistant", parent_tool_use_id: "toolu_sub", message: { id: `msg_extra_${n}`, model: "claude-haiku-5-5", role: "assistant", content: [{ type: "text", text: "x" }] } }));
+      events.splice(at, 0, ...calls);
+    };
+    const judged = await check(evidence(B1, { "B1.attempt-1": { events: extra } }));
+    expect(judged.verdict).toBe("FAIL");
+    expect(judged.model_calls).toBeGreaterThan(MAX_MODEL_CALLS);
+    expect(judged.line).toContain(`over the ${MAX_MODEL_CALLS} model call limit`);
+    expect(judged.line).not.toContain("budget");
+  });
+
+  test("a run at the limit is within it", async () => {
+    const B1 = await shipped("B1");
+    const judged = await check(evidence(B1));
+    expect(judged.model_calls).toBeLessThanOrEqual(MAX_MODEL_CALLS);
+    expect(judged.line).not.toContain("model call limit");
+  });
+
   test("a run that cost more than its budget fails whatever its checks found", async () => {
     const B1 = await shipped("B1");
     const judged = await check(evidence(B1, { "B1.attempt-1": { events: (events) => void (lastResult(events).total_cost_usd = BUDGET_USD + 0.1) } }));
@@ -205,4 +227,61 @@ describe("the flows and their checks", () => {
     const [c1, c5] = ["B1", "B5"].map((id) => checks.find((entry) => entry.id === id));
     expect(c5.args).toEqual(c1.args);
   });
+});
+
+// A signed-in session writes a project directory for its working directory
+// into the person's real config, empty but for a memory folder.
+describe("what a local sign-in leaves in the person's config directory", () => {
+  const slug = (path) => path.replace(/[^A-Za-z0-9]/g, "-");
+  const local = (home, cwd) => ({ tier: "behavior", config: null, cwd, env: { HOME: home } });
+  const projectOf = (home, cwd) => join(home, ".claude", "projects", slug(cwd));
+  const leave = (home, cwd, ...files) => {
+    mkdirSync(join(projectOf(home, cwd), "memory"), { recursive: true });
+    for (const file of files) writeFileSync(join(projectOf(home, cwd), file), "x");
+  };
+
+  test("is removed once the run ends, when it holds no file", () => {
+    const home = tempDir();
+    const cwd = "/private/var/folders/ab/T/pstack-verify-Xy12/B1/attempt-1/cwd";
+    leave(home, cwd);
+    forgetProjects([local(home, cwd)]);
+    expect(existsSync(projectOf(home, cwd))).toBe(false);
+    expect(existsSync(join(home, ".claude", "projects"))).toBe(true);
+  });
+
+  test("is kept when it holds a transcript, or is not named after a verifier sandbox, or the session had a config of its own", () => {
+    const home = tempDir();
+    const sandbox = "/private/var/folders/ab/T/pstack-verify-Xy12/B1/attempt-1/cwd";
+    const person = "/Users/someone/work/project";
+    leave(home, sandbox, "abc.jsonl");
+    leave(home, person);
+    forgetProjects([local(home, sandbox), local(home, person)]);
+    expect(existsSync(projectOf(home, sandbox))).toBe(true);
+    expect(existsSync(projectOf(home, person))).toBe(true);
+
+    const own = "/private/var/folders/ab/T/pstack-verify-Xy12/B2/attempt-1/cwd";
+    leave(home, own);
+    forgetProjects([{ ...local(home, own), config: "/somewhere" }, { ...local(home, own), tier: "surface" }]);
+    expect(existsSync(projectOf(home, own))).toBe(true);
+  });
+
+  test("a session whose CLAUDE_CONFIG_DIR is set is looked for there", () => {
+    const home = tempDir();
+    const config = tempDir();
+    const cwd = "/private/var/folders/ab/T/pstack-verify-Xy12/B3/attempt-1/cwd";
+    mkdirSync(join(config, "projects", slug(cwd), "memory"), { recursive: true });
+    forgetProjects([{ ...local(home, cwd), env: { HOME: home, CLAUDE_CONFIG_DIR: config } }]);
+    expect(existsSync(join(config, "projects", slug(cwd)))).toBe(false);
+  });
+});
+
+// Without this a dispatch would run and bill calls --max-turns does not bound.
+test("B4 refuses the dispatch by a hook, in every attempt, so a subagent never runs", () => {
+  const b4 = flows.find((flow) => flow.id === "B4");
+  for (const run of b4.runs) {
+    const settings = JSON.parse(run.args[run.args.indexOf("--settings") + 1]);
+    const [hook] = settings.hooks.PreToolUse;
+    expect(hook.matcher).toBe("Agent|Task");
+    expect(hook.hooks[0].command).toContain('"permissionDecision":"deny"');
+  }
 });

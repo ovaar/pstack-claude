@@ -7,7 +7,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { accessSync, closeSync, constants, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { accessSync, closeSync, constants, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative } from "node:path";
 
@@ -141,6 +141,20 @@ export function caps(sessions) {
   if (found.max_usd > BUDGET_USD) throw new Error(`the model tier plans up to $${found.max_usd}, over its budget of $${BUDGET_USD}`);
   if (found.max_turns > MAX_MODEL_CALLS) throw new Error(`the model tier plans up to ${found.max_turns} model turns, over its limit of ${MAX_MODEL_CALLS}`);
   return found;
+}
+
+// A session signed in as the person who runs the verifier writes a project
+// directory for its working directory into their real config directory, empty
+// but for a memory folder, even with no session persisted. It is named after
+// a sandbox directory that is thrown away, so nothing else owns it, and it is
+// removed when it holds no file. A session with its own config is left alone.
+const bare = (dir) => readdirSync(dir).every((name) => statSync(join(dir, name)).isDirectory() && bare(join(dir, name)));
+export function forgetProjects(sessions) {
+  for (const session of sessions.filter((each) => each.tier === "behavior" && !each.config)) {
+    const config = session.env.CLAUDE_CONFIG_DIR ?? join(session.env.HOME ?? "", ".claude");
+    const dir = join(config, "projects", session.cwd.replace(/[^A-Za-z0-9]/g, "-"));
+    if (session.cwd.includes("pstack-verify-") && existsSync(dir) && bare(dir)) rmSync(dir, { recursive: true });
+  }
 }
 
 // A flow's `files` make up the small project its sessions start in.

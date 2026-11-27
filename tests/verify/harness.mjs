@@ -121,7 +121,7 @@ export function evidence({ checks, runs, skills, behavior = false }, edits = {})
     cli: { path: "claude", real_path: "/opt/claude/2.1.332", sha256: "c".repeat(64), version: "2.1.332", stand_in: null, missing: false, required: false, problem: null },
     selection: { tier: "all", flow: null },
     // The recordings of the model tier were made signed in as a person.
-    behavior: behavior ? { mode: "local", credential: [], required: false, planned: { max_usd: 0.42, max_turns: 14 } } : null,
+    behavior: behavior ? { mode: "local", credential: [], required: false, planned: { max_usd: 0.45, max_turns: 15 } } : null,
     selected: [...new Set(runs.map((run) => run.check))],
     checks: listDir(checks),
     sessions: sessions.map(({ check, name, cwd }) => ({ check, name, cwd })),
