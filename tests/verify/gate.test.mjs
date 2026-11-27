@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 
-import { BYPASS_LINE, decide, hitsOf, isWatched, judgeLine, prePushHits, segments, VERIFIER_TIMEOUT_MS } from "../../tools/verify/gate.mjs";
+import { BYPASS_LINE, decide, hitsOf, isWatched, judgeLine, prePushHits, pushPlan, segments, VERIFIER_TIMEOUT_MS } from "../../tools/verify/gate.mjs";
 import { WATCHED } from "../../tools/verify/paths.mjs";
 import { cleanup, git, productRepo, tempDir } from "./harness.mjs";
 
@@ -472,3 +472,67 @@ test.skipIf(process.platform === "win32")("the Claude Code hook blocks the push 
   const spellings = ["gi''t push", "g\\it push", 'g"i"t push', "gh pr new --fill", "gh pr cr''eate", "sudo git push", "timeout 600 git push", "nice git push", "xargs git push", "git -c alias.p=push p", "bash -c -- 'git push'"];
   for (const command of spellings) expect([command, hook(command, { cwd: repo }).status]).toEqual([command, 2]);
 }, 12 * LONG);
+
+// --- which commits a push sends -------------------------------------------
+
+test.each([
+  [[], { refs: ["HEAD"] }],
+  [["origin"], { refs: ["HEAD"] }],
+  [["origin", "bad"], { refs: ["bad"] }],
+  [["origin", "bad:refs/heads/main"], { refs: ["bad"] }],
+  [["-u", "--force-with-lease=main:abc", "origin", "+bad:main", "HEAD~1:other"], { refs: ["bad", "HEAD~1"] }],
+  [["origin", "good:aa-good", "rev:zz-bad"], { refs: ["good", "rev"] }],
+  [["origin", "tag", "v1"], { refs: ["refs/tags/v1"] }],
+  [["-o", "ci.skip", "origin", "bad"], { refs: ["bad"] }],
+  [["--repo", "x", "bad"], { refs: ["bad"] }],
+  [["--", "origin", "bad"], { refs: ["bad"] }],
+  [["origin", ":old"], { refs: [] }],
+  [["--delete", "origin", "old"], { refs: [] }],
+  [["-d", "origin", "old"], { refs: [] }],
+  [["--dry-run", "origin", "bad"], { refs: [] }],
+  [["-n", "origin", "bad"], { refs: [] }],
+  [["-fn", "origin", "bad"], { refs: [] }],
+  [["--help"], { refs: [] }],
+  [["--all", "origin"], { refuse: expect.stringContaining("--all") }],
+  [["--mirror", "origin"], { refuse: expect.stringContaining("--mirror") }],
+  [["--tags", "origin"], { refuse: expect.stringContaining("--tags") }],
+  [["origin", "refs/heads/*:refs/heads/*"], { refuse: expect.stringContaining("pattern") }],
+])("`git push %j` sends %j", (args, plan) => {
+  expect(pushPlan(args)).toEqual(plan);
+});
+
+// HEAD is main with nothing new to send. `bad` carries a watched change and
+// `good` one that is not watched. The stand-in is never a pass, so a push that
+// reaches the verifier is blocked and one that does not is allowed.
+function branched() {
+  const { repo } = pushable();
+  watchedChange(repo);
+  git(repo, "branch", "bad");
+  git(repo, "reset", "--quiet", "--hard", "HEAD~1");
+  unwatchedChange(repo);
+  git(repo, "branch", "good");
+  git(repo, "reset", "--quiet", "--hard", "HEAD~1");
+  return repo;
+}
+
+test.skipIf(process.platform === "win32")("the Claude Code hook judges the ref a push names, not the HEAD it is run from", () => {
+  const repo = branched();
+  for (const command of ["git push origin bad", "git push origin bad:refs/heads/main", "git push origin refs/heads/bad", "git push origin good:aa-good bad:zz-bad", "git push origin +bad:bad", "git push --force origin bad"]) {
+    expect([command, hook(command, { cwd: repo }).status]).toEqual([command, 2]);
+  }
+}, 8 * LONG);
+
+test.skipIf(process.platform === "win32")("a push that names nothing the remote lacks, or deletes, or only rehearses, is not verified", () => {
+  const repo = branched();
+  for (const command of ["git push origin HEAD", "git push", "git push origin good", "git push origin :bad", "git push --delete origin bad", "git push --dry-run origin bad", "git push -n origin bad", "git push origin nonesuch"]) {
+    expect([command, hook(command, { cwd: repo })]).toEqual([command, expect.objectContaining({ status: 0, stderr: "" })]);
+  }
+}, 8 * LONG);
+
+test.skipIf(process.platform === "win32")("a push that cannot be read as named refs is refused, with what to do", () => {
+  const repo = branched();
+  for (const command of ["git push --all origin", "git push --mirror", "git push origin 'refs/heads/*:refs/heads/*'"]) {
+    const verdict = hook(command, { cwd: repo });
+    expect([command, verdict.status, verdict.stderr]).toEqual([command, 2, expect.stringContaining("by name")]);
+  }
+});

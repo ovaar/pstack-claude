@@ -174,6 +174,42 @@ export function hitsOf(command, cwd = ".") {
   return hits;
 }
 
+// Options of `git push` that take their value as the next word.
+const PUSH_VALUE_OPTIONS = new Set(["--repo", "-o", "--push-option", "--receive-pack", "--exec"]);
+
+// Which local refs a `git push` sends, from the words after `push`. The refs
+// are what is left of each refspec's colon, `HEAD` when it names none, and
+// none for a push that deletes or only rehearses. A push that sends more than
+// it names (`--all`, `--mirror`, `--tags`, a pattern) cannot be judged, and
+// says so in `refuse`.
+export function pushPlan(args) {
+  const words = [];
+  let named = false;
+  for (let at = 0; at < args.length; at++) {
+    const word = args[at];
+    if (word === "--") {
+      words.push(...args.slice(at + 1));
+      break;
+    }
+    if (word === "--dry-run" || word === "--help" || word === "--delete" || (/^-[^-]*[nhd]/.test(word) && !word.startsWith("--"))) return { refs: [] };
+    if (["--all", "--mirror", "--branches", "--tags"].includes(word)) return { refuse: `\`git push ${word}\` sends more refs than it names, which the gate cannot judge. Push the branches you mean by name, as \`git push origin <branch>\`` };
+    if (PUSH_VALUE_OPTIONS.has(word)) {
+      at++;
+      named ||= word === "--repo";
+    } else if (!word.startsWith("-")) words.push(word);
+  }
+  if (!named) words.shift();
+  const refs = [];
+  for (let at = 0; at < words.length; at++) {
+    const spec = (words[at] === "tag" && words[at + 1] !== undefined ? `refs/tags/${words[++at]}` : words[at]).replace(/^\+/, "");
+    if (spec.startsWith(":")) continue;
+    const local = spec.split(":")[0];
+    if (/[*?[]/.test(local)) return { refuse: `the refspec ${spec} is a pattern, which the gate cannot judge. Push the branches you mean by name, as \`git push origin <branch>\`` };
+    refs.push(local);
+  }
+  return { refs: words.length ? refs : ["HEAD"] };
+}
+
 // --- What the verdict says ----------------------------------------------
 
 // The first line of a verifier run. Only a PASS that ran every surface check
@@ -209,6 +245,7 @@ export async function decide({ hits, env }, io) {
   if (!hits.length) return { allow: true };
   if (env.PSTACK_VERIFY_GATE === "off") return { allow: true, message: BYPASS_LINE };
   for (const hit of hits) {
+    if (hit.refuse) return { allow: false, message: `verify gate: ${hit.refuse}. ${HUMAN_BYPASS}` };
     const subject = await io.subject(hit);
     if (!subject?.inScope) continue;
     if (!(await io.touches(hit, subject))) continue;
@@ -312,7 +349,19 @@ export function hookHits(payload) {
   const command = payload.tool_input?.command;
   if (typeof command !== "string") return [];
   const cwd = typeof payload.cwd === "string" ? payload.cwd : process.cwd();
-  return hitsOf(command, cwd).map((hit) => ({ ...hit, dir: isDirectory(hit.dir) ? hit.dir : cwd }));
+  return hitsOf(command, cwd).flatMap((found) => {
+    const hit = { ...found, dir: isDirectory(found.dir) ? found.dir : cwd };
+    return hit.kind === "push" ? pushedCommits(hit) : [hit];
+  });
+}
+
+// A push is judged on each commit it sends, which its refspecs name and HEAD
+// does not have to be. A ref that does not resolve is one git itself refuses.
+function pushedCommits({ dir, args }) {
+  const plan = pushPlan(args ?? []);
+  if (plan.refuse) return [{ kind: "push", dir, refuse: plan.refuse }];
+  const shas = new Set(plan.refs.map((ref) => gitOut(dir, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])).filter(Boolean));
+  return [...shas].map((sha) => ({ kind: "push", dir, sha }));
 }
 
 // pre-commit and prek do not forward git's stdin; they export the ref being
