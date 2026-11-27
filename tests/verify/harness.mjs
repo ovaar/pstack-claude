@@ -105,7 +105,7 @@ export async function shipped(id) {
 
 // The directory a run leaves for the checker: a stage, setup's record of the
 // run, and per run one trace with the sidecar the driver would have written.
-// `edits[check]` picks a recording (`fixture`), changes its events (`events`)
+// `edits[check]`, or `edits[check.run]` for one run, picks a recording (`fixture`), changes its events (`events`)
 // or its text (`raw`), changes the recorded `argv` or other sidecar fields,
 // adds a transcript or stderr, or leaves the trace out (`absent`). `stage` shapes the stage before setup
 // records it, `setup` changes setup's record, and `moved` changes the stage afterwards.
@@ -115,7 +115,8 @@ export function evidence({ checks, runs, skills, tree = { skills } }, edits = {}
   const sandbox = join(dir, "sandbox");
   edits.stage?.(stage);
   const sessions = runs.map((run) => {
-    const edit = edits[run.check] ?? {};
+    // `S5` edits every run of the check, `S5.env-off` one of them.
+    const edit = { ...edits[run.check], ...edits[`${run.check}.${run.name}`] };
     const fixture = edit.fixture ?? run.fixture;
     const named = (text) => text.replaceAll("<STAGE>", stage).replaceAll("<SANDBOX>", sandbox);
     const events = eventsOf(named(recorded(fixture)));
