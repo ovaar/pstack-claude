@@ -34,7 +34,7 @@ test("the untouched tree passes, and its row counts what was typed and how each 
   const result = await check(evidence(S6), S6.checks);
   expect(result.checks.find((each) => each.id === "S6")).toMatchObject({ verdict: "pass", failed: [], observations: [] });
   expect(markdown(result).split("\n").find((line) => line.startsWith("| S6 "))).toBe(
-    "| S6 a typed slash command is resolved before any model call | pass | 69 results for the messages typed; 44 skills echoed as a command; 44 skills expanded from the stage; 24 refusals (turns 0); 24 of 24 hidden skills typed; 24 principle-* skills, none invocable by a user; 1 replays of /pstack:does-not-exist as typed; 1 unknown_command_fallback in the transcript; no skill of the tree passed on as typed; 14 of 14 integrity rules hold |",
+    "| S6 a typed slash command is resolved before any model call | pass | 69 results for the messages typed; 44 skills echoed as a command; 44 skills expanded from the stage; 24 refusals (turns 0); 24 of 24 hidden skills typed; 24 hidden skills, each a principle-* skill; 24 principle-* skills, none invocable by a user; 1 replays of /pstack:does-not-exist as typed; 1 unknown_command_fallback in the transcript; no skill of the tree passed on as typed; 14 of 14 integrity rules hold |",
   );
 });
 
