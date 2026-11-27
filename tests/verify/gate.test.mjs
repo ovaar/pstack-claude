@@ -343,16 +343,25 @@ const prePush = (repo, sha, from, { env = {}, remote = "origin" } = {}) => {
 test.skipIf(process.platform === "win32")("the pre-push entry judges the commit pushed, not the working tree", () => {
   const { repo } = pushable();
   const base = git(repo, "rev-parse", "HEAD").trim();
-  watchedChange(repo);
+  // The pushed commit fails a check (the recordings name another version), the stand-in alone would not.
+  commit(repo, "VERSION", "9.9.9\n");
   const head = git(repo, "rev-parse", "HEAD").trim();
-  // The pushed commit changed a watched path; the working tree is then put back where the remote is.
   git(repo, "checkout", "--quiet", "--detach", base);
-  expect(prePush(repo, head, base)).toMatchObject({ status: 1, stderr: expect.stringContaining("stand-in CLI") });
-  // A commit with no watched change, though a later one has.
-  expect(prePush(repo, base, base)).toMatchObject({ status: 0, stderr: "" });
+  expect(prePush(repo, head, base)).toMatchObject({ status: 1, stderr: expect.stringContaining("the verifier did not pass") });
   // A new branch is compared with what the remote has: a zero sha for the remote.
   expect(prePush(repo, head, "0".repeat(40)).status).toBe(1);
   expect(prePush(repo, head, base, { env: { PSTACK_VERIFY_GATE: "off" } })).toMatchObject({ status: 0, stderr: `${BYPASS_LINE}\n` });
+  // A push that carries nothing watched is not verified at all.
+  expect(prePush(repo, base, base)).toMatchObject({ status: 0, stderr: "" });
+}, LONG);
+
+test.skipIf(process.platform === "win32")("the Claude Code hook judges HEAD, not what is uncommitted", () => {
+  const { repo } = pushable();
+  watchedChange(repo);
+  writeFileSync(join(repo, "VERSION"), "9.9.9\n");
+  const blocked = hook("git push", { cwd: repo });
+  expect(blocked.status).toBe(2);
+  expect(blocked.stderr).toContain("stand-in CLI");
 }, LONG);
 
 test.skipIf(process.platform === "win32")("a real git pre-push hook stops `git push`, leaves the remote as it was, and `--no-verify` is the only way past it", () => {
