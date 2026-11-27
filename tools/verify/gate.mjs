@@ -212,14 +212,21 @@ export function pushPlan(args) {
 
 // --- What the verdict says ----------------------------------------------
 
-// The first line of a verifier run. Only a PASS that ran every surface check
-// is one: `PASS surface 2/2 | ...`. STAND-IN, PARTIAL, SKIPPED and FAIL are
-// not, and neither is a RECHECK of someone else's run.
+// The first line of a verifier run, which the gate asks to be limited to the
+// surface tier. A PASS that ran every surface check is a pass:
+// `PASS surface 2/2 | ...`. Once a behavior check exists, the same run says
+// `PARTIAL surface 2/2 | behavior NOT RUN | ...`, because that check was left
+// out, and it is a pass too when nothing but unselected tiers are missing.
+// STAND-IN, SKIPPED, FAIL and a failing or missing surface check are not, and
+// neither is a RECHECK of someone else's run.
 export function judgeLine(line = "") {
   const word = line.match(/^(\S+)/)?.[1] ?? null;
   const round = line.match(/\| round (\d+)$/)?.[1];
   const [, passed, of] = line.match(/^\S+ surface (\d+)\/(\d+)\b/) ?? [];
-  return { word, ok: word === "PASS" && Number(of) > 0 && passed === of, round: round ? Number(round) : null };
+  const others = line.split(" | ").slice(1).filter((part) => !part.startsWith("round "));
+  const surfaceDone = Number(of) > 0 && passed === of;
+  const ok = surfaceDone && (word === "PASS" || (word === "PARTIAL" && others.every((part) => part.endsWith(" NOT RUN"))));
+  return { word, ok, round: round ? Number(round) : null };
 }
 
 const HUMAN_BYPASS = "Only the human sets PSTACK_VERIFY_GATE=off, in the environment the session started in. Do not set it.";

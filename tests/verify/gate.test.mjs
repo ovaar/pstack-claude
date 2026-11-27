@@ -5,12 +5,13 @@
 // the controls beside them (no watched path, no push, a bypass) must not be.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 
 import { BYPASS_LINE, decide, hitsOf, isWatched, installHook, judgeLine, prePushHits, pushPlan, segments, VERIFIER_TIMEOUT_MS } from "../../tools/verify/gate.mjs";
+import { check } from "../../tools/verify/check.mjs";
 import { WATCHED } from "../../tools/verify/paths.mjs";
-import { cleanup, git, productRepo, tempDir } from "./harness.mjs";
+import { cleanup, ENGINE, evidence, git, productRepo, tempDir } from "./harness.mjs";
 
 let tmp;
 beforeEach(() => {
@@ -144,6 +145,16 @@ test.each([
   ["PASS surface 1/2 | behavior NOT BUILT | round 1", false],
   ["STAND-IN surface 2/2 | behavior NOT BUILT | round 1", false],
   ["PARTIAL surface 1/2 | behavior NOT BUILT | round 1", false],
+  ["PARTIAL surface 2/2 | behavior NOT RUN | round 1", true],
+  ["PARTIAL surface 2/2 | behavior NOT RUN | round 3", true],
+  ["PARTIAL surface 1/2 | behavior NOT RUN | round 1", false],
+  ["PARTIAL surface 0/0 | behavior NOT RUN | round 1", false],
+  ["PARTIAL surface 2/2 | behavior 1/3 | round 1", false],
+  ["PARTIAL surface 2/2 | behavior NOT BUILT | round 1", false],
+  ["PARTIAL surface NOT RUN | behavior 2/2 | round 1", false],
+  ["STAND-IN surface 2/2 | behavior NOT RUN | round 1", false],
+  ["FAIL surface 2/2 | behavior NOT RUN | round 1", false],
+  ["RECHECK PARTIAL surface 2/2 | behavior NOT RUN | round 1", false],
   ["FAIL surface 1/2 | behavior NOT BUILT | round 2", false],
   ["SKIPPED surface: claude is not on PATH | behavior NOT BUILT | round 1", false],
   ["RECHECK PASS surface 2/2 | behavior NOT BUILT | round 1", false],
@@ -601,4 +612,19 @@ test.skipIf(process.platform === "win32")("install-hook does not wait for a stdi
     child.on("exit", (status) => (clearTimeout(timer), done(status)));
   });
   expect(code).toBe(0);
+});
+
+// Once a behavior check exists, a run limited to the surface tier says PARTIAL
+// even when every surface check passed, because the behavior check was left
+// out. The gate asks for the surface tier alone, so that is its pass.
+test("a surface-only run with a behavior check on file is a pass for the gate, and a failing surface check still is not", async () => {
+  const checks = tempDir();
+  cpSync(ENGINE.checks, checks, { recursive: true });
+  writeFileSync(join(checks, "B1-later.mjs"), 'export const title = "later";\nexport const tier = "behavior";\nexport const assertions = () => [];\n');
+  const passed = await check(evidence({ ...ENGINE, checks }, { setup: { selection: { tier: "surface", flow: null } } }), checks);
+  expect(passed.line).toBe("PARTIAL surface 2/2 | behavior NOT RUN | round 1");
+  expect(judgeLine(passed.line).ok).toBe(true);
+  const failed = await check(evidence({ ...ENGINE, checks }, { setup: { selection: { tier: "surface", flow: null } }, E2: { absent: true } }), checks);
+  expect(failed.line).toStartWith("FAIL surface 1/2");
+  expect(judgeLine(failed.line).ok).toBe(false);
 });
