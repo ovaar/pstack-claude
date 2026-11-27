@@ -84,13 +84,13 @@ test.skipIf(process.platform === "win32")("the checker rerun alone agrees with t
   const [dir] = runsOf(root);
   const receipt = readFileSync(join(dir, "receipt.json"), "utf8");
   const rerun = verify(["check", dir]);
-  expect([rerun.status, rerun.lines[0]]).toEqual([0, first.lines[0]]);
-  expect(json(join(dir, "receipt.recheck.json"))).toMatchObject({ verdict: "STAND-IN", rechecked_at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) });
+  expect([rerun.status, rerun.lines[0]]).toEqual([0, `RECHECK ${first.lines[0]}`]);
+  expect(json(join(dir, "receipt.recheck.json"))).toMatchObject({ verdict: "STAND-IN", line: rerun.lines[0], rechecked_at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) });
 
   writeFileSync(join(dir, "stage/plugins/pstack/README.md"), "edited after the drive\n");
   const moved = verify(["check", root]);
   expect(moved.status).toBe(1);
-  expect(tally(moved.lines[0])).toMatchObject({ word: "FAIL", failed: tally(first.lines[0]).of });
+  expect(moved.lines[0]).toStartWith("RECHECK FAIL surface 0/");
   expect(moved.stdout).toContain("| S2 the plugin loads from the tree | fail | context.stage-hash: saw stage hash ");
   const recheck = json(join(dir, "receipt.recheck.json"));
   expect(recheck.verdict).toBe("FAIL");

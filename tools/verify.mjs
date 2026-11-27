@@ -16,8 +16,9 @@
 // verify/checks/<id>-<name>.mjs says what must hold. Evidence goes to
 // <git dir>/pstack-verify/runs/<run>/ with the run's stage beside it, and the
 // last five runs are kept. `check` reruns the checker alone on a run
-// directory, or on the newest run of an evidence root, and writes
-// *.recheck.* files beside the run's own.
+// directory, or on the newest run of an evidence root. Its line starts with
+// RECHECK and it writes *.recheck.* files beside the run's own: the receipt
+// of a run is written once, by the run.
 //
 // The first line printed is the verdict. PASS: every check passed against
 // the `claude` on PATH. PARTIAL: nothing failed, and --tier or --flow left a
@@ -67,8 +68,11 @@ async function loadPairs() {
   return { flows, checks };
 }
 
-async function report(dir, stamp = {}) {
-  const result = { ...(await check(dir)), ...stamp };
+// A rerun of the checker judges whatever the run directory holds now, which
+// may no longer be what the run left, so its line says what it is.
+async function report(dir, recheckedAt) {
+  const judged = await check(dir);
+  const result = recheckedAt ? { ...judged, line: `RECHECK ${judged.line}`, rechecked_at: recheckedAt } : judged;
   console.log(writeEvidence(dir, result));
   console.log(`evidence: ${dir}`);
   return result;
@@ -136,7 +140,7 @@ function runDirectory(given) {
 async function main() {
   const args = process.argv.slice(2);
   if (args[0] === "check" && args.length !== 2) throw new UsageError(USAGE);
-  const result = args[0] === "check" ? await report(runDirectory(args[1]), { rechecked_at: new Date().toISOString() }) : await verify(parse(args));
+  const result = args[0] === "check" ? await report(runDirectory(args[1]), new Date().toISOString()) : await verify(parse(args));
   if (result.verdict === "FAIL") process.exit(1);
 }
 
