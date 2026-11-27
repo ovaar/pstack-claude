@@ -19,7 +19,9 @@ repos:
         always_run: true
       # Reruns the surface verifier on the commit being pushed and blocks on
       # anything but PASS. It runs only when the push touches a path the
-      # verifier watches. PSTACK_VERIFY_GATE=off bypasses it.
+      # verifier watches. PSTACK_VERIFY_GATE=off bypasses it. pre-commit and
+      # prek hand a hook one ref of a push and no stdin, so a push of several
+      # refs is judged whole only by `bun tools/verify/gate.mjs install-hook`.
       - id: verify-gate
         name: verifier passes on the pushed commit
         entry: bun tools/verify/gate.mjs pre-push

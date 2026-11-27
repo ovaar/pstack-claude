@@ -1,18 +1,23 @@
 #!/usr/bin/env bun
 // The push gate: nothing leaves this repository by accident on a tree the
-// verifier has not passed. Two entry points share this file.
+// verifier has not passed. Three entry points share this file.
 //
-//   bun tools/verify/gate.mjs hook       a Claude Code PreToolUse hook; reads
-//                                        the hook payload from stdin
-//   bun tools/verify/gate.mjs pre-push   a git pre-push hook, run through
-//                                        .pre-commit-config.yaml
+//   bun tools/verify/gate.mjs hook          a Claude Code PreToolUse hook; reads
+//                                           the hook payload from stdin
+//   bun tools/verify/gate.mjs pre-push      a git pre-push hook, run by
+//                                           pre-commit or prek from
+//                                           .pre-commit-config.yaml, or bare
+//   bun tools/verify/gate.mjs install-hook writes the bare git hook, which
+//                                           sees every ref of a push
 //
-// Both build the same facts and hand them to `decide`, which owns every
+// Both hooks build the same facts and hand them to `decide`, which owns every
 // verdict. The wrappers only gather facts and print the message.
 //
 // The gate never reads a receipt. It reruns `verify.mjs --tier surface` on a
-// clean checkout of the commit being pushed and reads the verdict line that
-// run prints, so a stale, copied or hand-written file cannot open it.
+// clean checkout of each commit being pushed and reads the verdict line that
+// run prints, so a stale, copied or hand-written file cannot open it. It
+// refuses to judge while the verifier's own files have uncommitted changes.
+// A push it cannot read, and a gate that crashes, block.
 //
 // PSTACK_VERIFY_GATE=off, set by the human in the environment Claude Code or
 // git was started with, bypasses it and says so. A command's own prefix does
@@ -32,6 +37,9 @@ const VERIFY = fileURLToPath(new URL("../verify.mjs", import.meta.url));
 export const BYPASS_LINE = "verify gate bypassed by PSTACK_VERIFY_GATE=off";
 export const VERIFIER_TIMEOUT_MS = 10 * 60_000;
 const MAX_ROUNDS = 3;
+// What the verifier is run from, and the files of it that decide a verdict.
+const JUDGE_ROOT = fileURLToPath(new URL("../..", import.meta.url));
+const JUDGE_FILES = ["tools/verify.mjs", "tools/plugin.mjs", "tools/verify"];
 const ZEROS = /^0+$/;
 
 // --- What a command line does -------------------------------------------
@@ -237,6 +245,7 @@ export function blockMessage({ line, word, round, sha }) {
   if (word === "BLOCKED" || (word === "FAIL" && round >= MAX_ROUNDS)) {
     return `verify gate: BLOCKED after ${round >= MAX_ROUNDS ? round : MAX_ROUNDS} failed rounds${at}. STOP. Do not edit further and do not push. Report to the human what the verifier named and where its evidence is, and wait for their word. ${HUMAN_BYPASS}\nverifier said: ${line}`;
   }
+  if (word === "DIRTY") return `verify gate: the verifier's own files have uncommitted changes (${line.slice("DIRTY ".length)}), so an edit nobody pushed would decide the verdict on ${sha?.slice(0, 12)}. Commit or discard them, then push again. ${HUMAN_BYPASS}`;
   if (word === "SKIPPED") return `verify gate: the verifier did not run${at}: ${line}. Fix: install Claude Code so \`claude\` is on PATH, then run \`bun tools/verify.mjs --tier surface\`. ${HUMAN_BYPASS}`;
   if (word === "STAND-IN") return `verify gate: the verifier ran against a stand-in CLI${at}, which proves nothing about the claude a user has. Fix: unset PSTACK_VERIFY_CLAUDE and run \`bun tools/verify.mjs --tier surface\`. ${HUMAN_BYPASS}`;
   return `verify gate: the verifier did not pass${at}${round ? ` (round ${round} of ${MAX_ROUNDS})` : ""}. Fix what it names, commit, run \`bun tools/verify.mjs --tier surface\` until it prints PASS, then push again. ${HUMAN_BYPASS}\nverifier said: ${line ?? "no verdict line"}`;
@@ -304,6 +313,13 @@ function againstBase(dir, sha) {
   return null;
 }
 
+// The verifier's own files with a change nobody committed, edited or added.
+// Git's status is the comparison, and not a repository is nothing to compare.
+export function judgeChanges(root = JUDGE_ROOT) {
+  const status = git(root, ["status", "--porcelain", "--untracked-files=all", "--", ...JUDGE_FILES]);
+  return status.status === 0 ? status.stdout.split("\n").filter(Boolean).map((line) => line.slice(3)) : [];
+}
+
 const readJson = (file) => {
   try {
     return JSON.parse(readFileSync(file, "utf8"));
@@ -320,7 +336,9 @@ const readJson = (file) => {
 // the verifier counts every failed run, so a retry of the very same commit is
 // given back its round, and the line says so. Nothing was edited, so nothing
 // was attempted.
-export function verifyCommit(dir, sha, env = process.env) {
+export function verifyCommit(dir, sha, env = process.env, judgeRoot = JUDGE_ROOT) {
+  const unsettled = judgeChanges(judgeRoot);
+  if (unsettled.length) return `DIRTY ${unsettled.join(", ")}`;
   const evidence = join(gitOut(dir, ["rev-parse", "--absolute-git-dir"]), "pstack-verify");
   const [rounds, last] = [join(evidence, "rounds.json"), join(evidence, "gate-last.json")];
   const retry = readJson(last)?.sha === sha;

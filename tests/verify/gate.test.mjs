@@ -8,10 +8,10 @@ import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 
-import { BYPASS_LINE, decide, hitsOf, isWatched, installHook, judgeLine, prePushHits, pushPlan, segments, VERIFIER_TIMEOUT_MS } from "../../tools/verify/gate.mjs";
+import { BYPASS_LINE, decide, hitsOf, isWatched, installHook, judgeChanges, judgeLine, prePushHits, pushPlan, segments, verifyCommit, VERIFIER_TIMEOUT_MS } from "../../tools/verify/gate.mjs";
 import { check } from "../../tools/verify/check.mjs";
 import { WATCHED } from "../../tools/verify/paths.mjs";
-import { cleanup, ENGINE, evidence, git, productRepo, tempDir } from "./harness.mjs";
+import { cleanup, commitAll, ENGINE, evidence, git, productRepo, tempDir } from "./harness.mjs";
 
 let tmp;
 beforeEach(() => {
@@ -643,4 +643,45 @@ test("a surface-only run with a behavior check on file is a pass for the gate, a
   const failed = await check(evidence({ ...ENGINE, checks }, { setup: { selection: { tier: "surface", flow: null } }, E2: { absent: true } }), checks);
   expect(failed.line).toStartWith("FAIL surface 1/2");
   expect(judgeLine(failed.line).ok).toBe(false);
+});
+
+// --- the code that judges ---------------------------------------------------
+
+// The gate runs the verifier from the checkout it lives in, and points it at the
+// commit pushed. An uncommitted edit to the verifier would then decide that
+// commit's verdict, so the gate refuses to judge while there is one.
+function judgeRepo() {
+  const root = tempDir();
+  mkdirSync(join(root, "tools/verify/checks"), { recursive: true });
+  for (const file of ["tools/verify.mjs", "tools/plugin.mjs", "tools/verify/gate.mjs", "tools/verify/checks/S1-a.mjs", "README.md"]) writeFileSync(join(root, file), "x\n");
+  return commitAll(root, "judge");
+}
+
+test("the verifier's own files, edited or added and not committed, are named; other files are not", () => {
+  const root = judgeRepo();
+  expect(judgeChanges(root)).toEqual([]);
+  writeFileSync(join(root, "README.md"), "changed\n");
+  expect(judgeChanges(root)).toEqual([]);
+  writeFileSync(join(root, "tools/verify/checks/S1-a.mjs"), "weaker\n");
+  writeFileSync(join(root, "tools/verify/checks/S2-new.mjs"), "new\n");
+  writeFileSync(join(root, "tools/verify.mjs"), "edited\n");
+  writeFileSync(join(root, "tools/plugin.mjs"), "edited\n");
+  expect(judgeChanges(root).sort()).toEqual(["tools/plugin.mjs", "tools/verify.mjs", "tools/verify/checks/S1-a.mjs", "tools/verify/checks/S2-new.mjs"]);
+  // Not a repository: nothing to compare with.
+  expect(judgeChanges(tempDir())).toEqual([]);
+});
+
+test.skipIf(process.platform === "win32")("with the verifier edited and uncommitted, the verifier is not run and the push is blocked with the reason", async () => {
+  const { repo } = pushable();
+  watchedChange(repo);
+  const sha = git(repo, "rev-parse", "HEAD").trim();
+  const root = judgeRepo();
+  writeFileSync(join(root, "tools/verify/checks/S1-a.mjs"), "weaker\n");
+  const line = verifyCommit(repo, sha, { PATH, HOME: tmp, TMPDIR: tmp }, root);
+  expect(line).toBe("DIRTY tools/verify/checks/S1-a.mjs");
+  expect(git(repo, "worktree", "list").trim().split("\n")).toHaveLength(1);
+  const verdict = await run({ line });
+  expect(verdict.allow).toBe(false);
+  expect(verdict.message).toMatch(/uncommitted.*tools\/verify\/checks\/S1-a\.mjs.*Commit or discard them/s);
+  expect(verdict.message).toContain("Do not set it");
 });
