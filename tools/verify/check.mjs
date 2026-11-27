@@ -1,25 +1,32 @@
 // The checker, the third role: a pure function from an evidence directory to
-// verdicts. It starts no process and reads traces only through trace.mjs.
-// Every verdict is recomputed from structured events, never from what a model
-// wrote and never from an exit code. Before a check's own assertions count,
-// the integrity rules confirm the driver ran what it was meant to run: the
-// plugin came from the stage, the stage did not move, the trace is the one
-// the driver hashed, and a zero-model run called no model.
+// verdicts. It starts no process, writes no file and reads traces only
+// through trace.mjs. Every verdict is recomputed from structured events,
+// never from what a model wrote and never from an exit code. Before a check's
+// own assertions count, the integrity rules confirm the driver ran what it
+// was meant to run: the session was started with the declared arguments, in
+// the directory setup made, with the plugin from the stage; the stage did not
+// move; the trace is the one the driver hashed; a zero-model run called no
+// model.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { PLUGIN } from "../plugin.mjs";
 import { CHECKS_DIR, loadDir } from "./paths.mjs";
-import { sha256, stageHash } from "./stage.mjs";
+import { sha256, stageHash, stageSeal } from "./stage.mjs";
 import { readRun, runNames } from "./trace.mjs";
 
 const PIN = JSON.parse(readFileSync(new URL("./cli-pin.json", import.meta.url), "utf8"));
 
 export const TIERS = ["surface", "behavior"];
 const FAILED = ["fail", "unobservable", "error"];
-const BANNED_FLAGS = ["--bare", "--safe-mode"];
 const SLOW_HOOK_MS = 1000;
+const RERUN = "run the verifier again";
+
+// How a session must have been started. The driver holds its own copy on
+// purpose: a flag added there alone fails the argv rule. Without --bare or
+// --safe-mode, which skip plugin hooks.
+const sessionArgv = (cli, plugin, args) => [cli, "-p", "--plugin-dir", plugin, "--model", "haiku", "--output-format", "stream-json", "--verbose", ...args];
 
 // Thrown when a record a check needs is not in the evidence. The check is
 // then unobservable, which counts as failed: no verdict rests on an absence.
@@ -29,39 +36,65 @@ const missing = (what) => {
 };
 
 function readStage(setup) {
+  const at = (path) => join(setup.stage, path);
   const read = (path) => {
     try {
-      return readFileSync(join(setup.stage, path));
+      return readFileSync(at(path));
     } catch {
       return null;
     }
   };
   return {
-    plugin: join(setup.stage, PLUGIN),
-    recorded: setup.stage_hash,
+    plugin: at(PLUGIN),
     hash: stageHash(setup.stage),
+    seal: stageSeal(setup.stage),
     version: read("VERSION")?.toString("utf8").trim() ?? null,
-    sha256: (path) => {
-      const bytes = read(path);
-      return bytes && sha256(bytes);
+    // All a check file may ask of the stage.
+    offered: {
+      sha256: (path) => {
+        const bytes = read(path);
+        return bytes && sha256(bytes);
+      },
+      text: (path) => read(path)?.toString("utf8") ?? null,
+      list: (path) => {
+        try {
+          return readdirSync(at(path)).sort();
+        } catch {
+          return [];
+        }
+      },
     },
   };
 }
 
 // A rule that cannot be evaluated is left out, not failed: a trace with no
-// init fails `init-present` once instead of dragging four plugin rules along.
-function integrity(run, stage, zeroModel) {
+// init fails `init-present` once instead of dragging the plugin rules along.
+function integrity(run, check, setup, stage) {
   const rules = [];
   const rule = (id, ok, saw, want) => rules.push({ id: `${run.name}.${id}`, ok, saw, want });
   const init = run.trace.init();
   const results = run.trace.results();
-  const banned = run.argv.filter((arg) => BANNED_FLAGS.includes(arg));
 
-  rule("stage-hash", stage.hash !== null && stage.hash === stage.recorded, stage.hash === null ? "the stage is gone" : `stage hash ${stage.hash}`, `the stage hash setup recorded, ${stage.recorded}`);
+  rule("stage-hash", stage.hash !== null && stage.hash === setup.stage_hash, stage.hash === null ? `the stage is gone; ${RERUN}` : `stage hash ${stage.hash}`, `the stage hash setup recorded, ${setup.stage_hash}`);
+  if (stage.seal !== null) {
+    const sealed = stage.seal === setup.stage_seal;
+    rule("stage-seal", sealed, sealed ? "no entry of the stage changed since setup" : "an entry of the stage changed since setup, or was changed and put back", "every entry of the stage as setup left it");
+  }
   rule("trace-sha256", run.sha256 === run.recordedSha256, `trace sha256 ${run.sha256}`, `the sha256 in the sidecar, ${run.recordedSha256}`);
-  rule("argv", banned.length === 0, banned.length ? `argv with ${banned.join(" ")}` : `argv without ${BANNED_FLAGS.join(" or ")}`, `no ${BANNED_FLAGS.join(" or ")}`);
+
+  const declared = check.args?.[run.name];
+  const wanted = declared && sessionArgv(setup.cli.path, stage.plugin, declared);
+  rule(
+    "argv",
+    Boolean(wanted) && JSON.stringify(run.argv) === JSON.stringify(wanted),
+    `argv ${JSON.stringify(run.argv)}`,
+    wanted ? `exactly ${JSON.stringify(wanted)}` : `a run the check file declares arguments for, and it declares none for ${run.name}`,
+  );
   rule("init-present", init !== null, init ? "an init event" : "no init event", "an init event");
   rule("result-present", results.length > 0, results.length ? "a result event" : "no result event", "a result event");
+
+  const planned = (setup.sessions ?? []).find((session) => session.check === check.id && session.name === run.name);
+  if (init) rule("cwd", Boolean(planned) && init.cwd === planned.cwd, `cwd ${init.cwd}`, planned ? `the working directory setup made for this run, ${planned.cwd}` : `a run setup planned, and it planned none named ${run.name}`);
 
   const mine = init?.plugins.filter((plugin) => plugin.name === "pstack") ?? [];
   if (init) rule("plugin-once", mine.length === 1, `${mine.length} plugins named pstack in init.plugins`, "exactly 1");
@@ -72,7 +105,8 @@ function integrity(run, stage, zeroModel) {
     rule("plugin-version", mine.every((plugin) => plugin.version === stage.version), `plugin version ${seen("version")}`, `the stage's VERSION, ${stage.version}`);
   }
 
-  if (zeroModel) {
+  // Every surface check is a zero-model run.
+  if (check.tier === "surface") {
     const models = run.trace.models();
     if (results.length) rule("zero-cost", results.every((result) => result.costUsd === 0), `total_cost_usd ${results.map((result) => result.costUsd).join(", ")}`, "total_cost_usd 0 on a zero-model run");
     rule("no-model", models.length === 0, models.length ? `model ${models.join(", ")}` : "no real model id", "no real model id on a zero-model run");
@@ -80,9 +114,14 @@ function integrity(run, stage, zeroModel) {
   return rules;
 }
 
-// Defects worth a line even when the check passed. They change no verdict.
+// Defects worth a line even when the check passed, and what a reader needs
+// to tell a failed plugin from a session that never ran. They change no
+// verdict.
 function observations(run) {
   const seen = [];
+  if (run.ended.spawnError) seen.push(`the CLI did not start: ${run.ended.spawnError}`);
+  if (run.ended.timedOut) seen.push("the driver stopped the session at its time limit");
+  if (run.ended.stderr) seen.push(`the session wrote to stderr: ${run.ended.stderr}`);
   const hooks = run.trace.hooks();
   const starts = hooks.filter((hook) => hook.event === "SessionStart");
   if (starts.length > 1) seen.push(`${starts.length} SessionStart hook responses in one session`);
@@ -103,23 +142,29 @@ function observations(run) {
   return seen.map((text) => ({ run: run.name, text }));
 }
 
-function judge(check, setup, stage, dir) {
-  const base = { id: check.id, title: check.title, tier: check.tier, selected: setup.selected.includes(check.id) };
+function judge(id, check, setup, stage, dir) {
+  const recorded = (setup.checks ?? []).find((each) => each.id === id);
+  const base = { id, title: check?.title ?? "(no check file)", tier: check?.tier ?? null, selected: setup.selected.includes(id) };
+  // The run was judged by one set of check files. With one gone or changed,
+  // a rerun would be another judge's verdict under the first one's name.
+  if (!check) return { ...base, verdict: "error", reason: `no check file for ${id}${recorded ? `; the run was judged by ${recorded.file}` : ""}` };
   if (!base.selected) return { ...base, verdict: "skipped", reason: "not selected" };
+  if (recorded?.sha256 !== check.sha256) {
+    return { ...base, verdict: "error", reason: `${check.file} ${recorded ? "changed after the run" : "was not there at the run"}; ${RERUN}` };
+  }
   if (setup.cli.problem) {
     return { ...base, verdict: setup.cli.missing && !setup.cli.required ? "skipped" : "error", reason: setup.cli.problem };
   }
 
   const runs = existsSync(dir) ? runNames(dir).map((name) => readRun(dir, name)) : [];
-  // Every surface check is a zero-model run.
-  const rules = runs.flatMap((run) => integrity(run, stage, check.tier === "surface"));
+  const rules = runs.flatMap((run) => integrity(run, check, setup, stage));
   let assertions = [];
   // A check that asks for no trace must not pass because none was there.
   let reason = runs.length ? null : "every trace is missing";
   try {
     assertions = check.assertions({
       trace: (name) => runs.find((run) => run.name === name)?.trace ?? missing(`the ${name} trace`),
-      stage: { sha256: stage.sha256 },
+      stage: stage.offered,
       missing,
     });
   } catch (error) {
@@ -127,7 +172,7 @@ function judge(check, setup, stage, dir) {
     reason = `${error.message} is missing`;
   }
 
-  const failed = [...rules, ...assertions].filter((item) => !item.ok).map((item) => `${check.id}.${item.id}`);
+  const failed = [...rules, ...assertions].filter((item) => !item.ok).map((item) => `${id}.${item.id}`);
   return {
     ...base,
     verdict: failed.length ? "fail" : reason ? "unobservable" : "pass",
@@ -148,25 +193,49 @@ function tierSummary(tier, checks, cli) {
   return `${tier} ${mine.filter((check) => check.verdict === "pass").length}/${mine.length}`;
 }
 
+// PASS is kept for a run in which every check passed against the CLI a user
+// has. Nothing failed in a STAND-IN run (another CLI was driven) or a PARTIAL
+// one (some check was left out), and neither is a pass.
+function word(checks, cli) {
+  const passed = checks.filter((each) => each.verdict === "pass").length;
+  if (checks.some((each) => FAILED.includes(each.verdict))) return "FAIL";
+  if (!passed) return "SKIPPED";
+  if (cli.stand_in) return "STAND-IN";
+  return passed === checks.length ? "PASS" : "PARTIAL";
+}
+
 export async function check(evidenceDir, checksDir = CHECKS_DIR) {
   const setup = JSON.parse(readFileSync(join(evidenceDir, "setup.json"), "utf8"));
   const stage = readStage(setup);
-  const checks = (await loadDir(checksDir)).map((each) => judge(each, setup, stage, join(evidenceDir, "traces", each.id)));
+  const files = await loadDir(checksDir);
+  const traces = join(evidenceDir, "traces");
+  const traced = existsSync(traces)
+    ? readdirSync(traces, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+    : [];
+  // Every check the run knew of is judged, with or without its file: a check
+  // that is deleted must not drop out of the verdict with it.
+  const ids = [...new Set([...files, ...(setup.checks ?? [])].map((each) => each.id).concat(setup.selected, traced))].sort();
+  const checks = ids.map((id) => judge(id, files.find((each) => each.id === id), setup, stage, join(traces, id)));
 
-  // The word leads the line, but a receipt is read check by check: a run
-  // limited to one flow passes here with the other checks marked skipped.
-  const verdict = checks.some((each) => FAILED.includes(each.verdict)) ? "FAIL" : checks.some((each) => each.verdict === "pass") ? "PASS" : "SKIPPED";
+  const verdict = word(checks, setup.cli);
   return {
     line: `${verdict} ${TIERS.map((tier) => tierSummary(tier, checks, setup.cli)).join(" | ")} | round ${setup.round}`,
     verdict,
     run: setup.run,
     round: setup.round,
     subject_id: setup.subject_id,
+    tree_id: setup.tree_id,
     stage: setup.stage,
     stage_hash: setup.stage_hash,
+    sandbox: setup.sandbox,
     selection: setup.selection,
     cli_version: setup.cli.version,
     cli_verified: PIN.verified,
+    cli_path: setup.cli.real_path,
+    cli_sha256: setup.cli.sha256,
+    cli_stand_in: setup.cli.stand_in,
     cost_usd: checks.reduce((sum, each) => sum + (each.cost_usd ?? 0), 0),
     checks,
   };

@@ -1,17 +1,18 @@
 // Setup, the first of the verifier's three roles: it decides what is under
 // test and where it runs. It snapshots the tree that would be committed,
-// extracts the product paths into a stage outside the repository, and builds
-// each session a throwaway home, config directory and working directory with
-// an environment made from an allow-list. It starts git, tar and
-// `claude --version`; it never starts a session.
+// extracts the product paths into a stage outside the working tree, and
+// builds each session a throwaway home, config directory and working
+// directory with an environment made from an allow-list. It starts git, tar
+// and `claude --version`; it never starts a session.
 
 import { spawnSync } from "node:child_process";
-import { accessSync, constants, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { accessSync, closeSync, constants, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
 import { PRODUCT, WATCHED } from "./paths.mjs";
-import { sha256, stageHash } from "./stage.mjs";
+import { sha256, stageHash, stageSeal } from "./stage.mjs";
 
 const PIN = JSON.parse(readFileSync(new URL("./cli-pin.json", import.meta.url), "utf8"));
 
@@ -22,7 +23,17 @@ function run(command, args, options = {}) {
   return result.stdout;
 }
 
-const git = (root, args, env = {}) => run("git", ["-C", root, ...args], { env: { ...process.env, ...env } }).toString();
+// The variables that tell git which repository to act on, as git lists them.
+// A git hook in a linked worktree runs with GIT_DIR exported, and with it
+// `git -C <elsewhere>` still acts on the hook's repository.
+let locating;
+export function gitEnv(env = process.env) {
+  locating ??= new Set(run("git", ["rev-parse", "--local-env-vars"]).toString().split("\n"));
+  return Object.fromEntries(Object.entries(env).filter(([name]) => !locating.has(name)));
+}
+
+const gitBytes = (root, args, env = {}) => run("git", ["-C", root, ...args], { env: { ...gitEnv(), ...env } });
+const git = (root, args, env) => gitBytes(root, args, env).toString();
 
 // The tree a commit made now would hold: HEAD plus every changed and
 // untracked file. A temporary index builds it, so the real index and the
@@ -45,21 +56,22 @@ export function snapshot(tree) {
 // and the link check would scan it, and it would show in `git status`.
 export const evidenceRoot = (root) => join(git(root, ["rev-parse", "--absolute-git-dir"]).trim(), "pstack-verify");
 
-// Stages and sandboxes of one evidence root share one directory, so pruning
-// lists that directory and never deletes a path it read from a file.
-export const sandboxRoot = (evidence) => join(realpathSync(tmpdir()), `pstack-verify-${sha256(evidence).slice(0, 12)}`);
-
 export function buildStage({ root, treeId }, dir) {
   const present = git(root, ["ls-tree", "--name-only", treeId, "--", ...PRODUCT]).split("\n").filter(Boolean);
   // With no path, git archive would export the whole tree.
   if (!present.length) throw new Error(`${root} holds none of ${PRODUCT.join(", ")}`);
   mkdirSync(dir, { recursive: true });
-  run("tar", ["-x", "-f", "-", "-C", dir], { input: run("git", ["-C", root, "archive", "--format=tar", treeId, "--", ...present]) });
+  run("tar", ["-x", "-f", "-", "-C", dir], { input: gitBytes(root, ["archive", "--format=tar", treeId, "--", ...present]) });
   // The CLI reports the plugin path it was given, and the checker compares
-  // that with this one, so a symlinked temp directory is resolved first.
+  // that with this one, so a symlinked directory is resolved first.
   const stage = realpathSync(dir);
-  return { stage, stageHash: stageHash(stage) };
+  return { stage, stageHash: stageHash(stage), stageSeal: stageSeal(stage) };
 }
+
+// Where one verifier run keeps its sessions' directories. They are thrown
+// away after the drive, so they stay out of the evidence. Resolved, because
+// a session reports its working directory resolved.
+export const sandboxBase = () => realpathSync(mkdtempSync(join(tmpdir(), "pstack-verify-")));
 
 export function sandbox(dir) {
   const box = { home: join(dir, "home"), config: join(dir, "config"), cwd: join(dir, "cwd") };
@@ -87,14 +99,6 @@ export function plan(flows, base, env = process.env) {
   );
 }
 
-// The stage stays for as long as its evidence does, so the checker can be
-// rerun against it. Everything else under the run's directory is throwaway.
-export function discardSandboxes(base) {
-  for (const name of readdirSync(base)) {
-    if (name !== "stage") rmSync(join(base, name), { recursive: true, force: true });
-  }
-}
-
 function executable(path) {
   try {
     accessSync(path, constants.X_OK);
@@ -119,21 +123,39 @@ export function olderThan(version, floor) {
   return at !== -1 && a[at] < b[at];
 }
 
-// `problem` is null when the CLI can be driven. The checker turns a problem
-// into verdicts; setup only records what it found.
+// In pieces: the CLI is a few hundred megabytes.
+function fileSha256(path) {
+  const hash = createHash("sha256");
+  const fd = openSync(path, "r");
+  try {
+    const piece = Buffer.alloc(1 << 22);
+    for (let read = readSync(fd, piece); read > 0; read = readSync(fd, piece)) hash.update(piece.subarray(0, read));
+  } finally {
+    closeSync(fd);
+  }
+  return hash.digest("hex");
+}
+
+// `problem` is null when the CLI can be driven. `stand_in` says why a run
+// against this CLI is no verdict on the one a user has: it was named through
+// the environment, or it does not call itself Claude Code. The checker turns
+// both into verdicts; setup only records what it found.
 export function doctor(box, env = process.env, pin = PIN) {
   const required = env.PSTACK_VERIFY_REQUIRE_CLI === "1";
-  const path = findCli(env);
-  if (!path) {
-    const problem = env.PSTACK_VERIFY_CLAUDE ? "PSTACK_VERIFY_CLAUDE does not name an executable" : "claude is not on PATH";
-    return { path, version: null, missing: true, required, problem };
-  }
-  const probe = spawnSync(path, ["--version"], { env: childEnv(box, env), encoding: "utf8", timeout: 30_000 });
-  const version = probe.stdout?.match(/\d+\.\d+\.\d+/)?.[0] ?? null;
+  const named = Boolean(env.PSTACK_VERIFY_CLAUDE);
+  const found = { path: findCli(env), real_path: null, sha256: null, version: null, stand_in: null, missing: false, required };
+  // A name that leads nowhere is a mistake to report, not a machine without the CLI.
+  if (!found.path) return named ? { ...found, problem: "PSTACK_VERIFY_CLAUDE does not name an executable" } : { ...found, missing: true, problem: "claude is not on PATH" };
+
+  const real = realpathSync(found.path);
+  const probe = spawnSync(found.path, ["--version"], { env: childEnv(box, env), encoding: "utf8", timeout: 30_000 });
+  const banner = (probe.stdout ?? "").split("\n").find((line) => /\d+\.\d+\.\d+/.test(line))?.trim() ?? "";
+  const version = banner.match(/\d+\.\d+\.\d+/)?.[0] ?? null;
   const problem = !version
     ? "claude --version printed no version"
     : olderThan(version, pin.minimum)
       ? `claude ${version} is older than the minimum ${pin.minimum}`
       : null;
-  return { path, version, missing: false, required, problem };
+  const standIn = named ? "named by PSTACK_VERIFY_CLAUDE" : banner === `${version} (Claude Code)` ? null : `calls itself ${JSON.stringify(banner)}`;
+  return { ...found, real_path: real, sha256: fileSha256(real), version, stand_in: standIn, problem };
 }

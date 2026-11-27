@@ -14,15 +14,20 @@
 //
 // One file per check: verify/flows/<id>-<name>.mjs says what to run and
 // verify/checks/<id>-<name>.mjs says what must hold. Evidence goes to
-// <git dir>/pstack-verify/runs/<run>/, the last five runs are kept, and
-// `check` reruns the checker alone on a run directory or on the newest run of
-// an evidence root. Exit 1 on any fail, unobservable or error.
+// <git dir>/pstack-verify/runs/<run>/ with the run's stage beside it, and the
+// last five runs are kept. `check` reruns the checker alone on a run
+// directory, or on the newest run of an evidence root, and writes
+// *.recheck.* files beside the run's own.
 //
-// PSTACK_VERIFY_CLAUDE names the CLI to drive instead of `claude` on PATH.
-// With no CLI the run is SKIPPED and exits 0, or exits 1 when
+// The first line printed is the verdict. PASS: every check passed against
+// the `claude` on PATH. PARTIAL: nothing failed, and --tier or --flow left a
+// check out. STAND-IN: nothing failed against a CLI named by
+// PSTACK_VERIFY_CLAUDE, or one that does not call itself Claude Code.
+// SKIPPED: no CLI, nothing ran. FAIL: a check failed, was unobservable or
+// could not be judged. Exit 1 on FAIL, which a missing CLI is when
 // PSTACK_VERIFY_REQUIRE_CLI=1.
 
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,8 +35,8 @@ import { isMain, PLUGIN } from "./plugin.mjs";
 import { check, TIERS } from "./verify/check.mjs";
 import { drive } from "./verify/drive.mjs";
 import { nextRound, prune, recordRound, writeEvidence } from "./verify/evidence.mjs";
-import { CHECKS_DIR, FLOWS_DIR, loadDir } from "./verify/paths.mjs";
-import { buildStage, discardSandboxes, doctor, evidenceRoot, plan, sandbox, sandboxRoot, snapshot } from "./verify/setup.mjs";
+import { CHECKS_DIR, checkShape, FLOWS_DIR, flowShape, loadDir } from "./verify/paths.mjs";
+import { buildStage, doctor, evidenceRoot, plan, sandbox, sandboxBase, snapshot } from "./verify/setup.mjs";
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const USAGE = `usage: bun tools/verify.mjs [--tier ${TIERS.join("|")}|all] [--flow <id>] [--tree <checkout>] [--evidence <dir>] [--jobs 1-3]
@@ -51,25 +56,26 @@ function parse(args) {
   return options;
 }
 
-// A flow with no check would be driven and never judged, and a check with no
-// flow would never run, so the two directories must list the same checks.
-async function loadFlows() {
+// A flow with no check would be driven and never judged, a check with no
+// flow would never run, and a flow whose arguments its check does not
+// declare would only fail later, so the two directories must agree.
+async function loadPairs() {
   const flows = await loadDir(FLOWS_DIR);
   const checks = await loadDir(CHECKS_DIR);
-  const pairs = (list) => list.map((each) => `${each.file}:${each.tier}`).join(" ");
-  if (pairs(flows) !== pairs(checks)) throw new Error(`flows/ and checks/ disagree: flows [${pairs(flows)}], checks [${pairs(checks)}]`);
-  return flows;
+  const [fromFlows, fromChecks] = [flows.map(flowShape), checks.map(checkShape)].map((shapes) => JSON.stringify(shapes));
+  if (fromFlows !== fromChecks) throw new Error(`flows/ and checks/ disagree: flows ${fromFlows}, checks ${fromChecks}`);
+  return { flows, checks };
 }
 
-async function report(dir) {
-  const result = await check(dir);
+async function report(dir, stamp = {}) {
+  const result = { ...(await check(dir)), ...stamp };
   console.log(writeEvidence(dir, result));
   console.log(`evidence: ${dir}`);
   return result;
 }
 
 async function verify(options) {
-  const flows = await loadFlows();
+  const { flows, checks } = await loadPairs();
   if (options.flow && !flows.some((flow) => flow.id === options.flow)) {
     throw new UsageError(`no flow ${options.flow}; flows: ${flows.map((flow) => flow.id).join(", ")}`);
   }
@@ -79,38 +85,50 @@ async function verify(options) {
   const root = resolve(options.evidence ?? evidenceRoot(snap.root));
   const run = `${new Date().toISOString().replace(/[-:.]/g, "")}-${process.pid}`;
   const dir = join(root, "runs", run);
-  const base = join(sandboxRoot(root), run);
-  const { stage, stageHash } = buildStage(snap, join(base, "stage"));
-  const cli = doctor(sandbox(join(base, "doctor")));
-
+  // Made before the stage: a run that ends meanwhile prunes the oldest run
+  // directories, and this one has to be among those it counts.
   mkdirSync(dir, { recursive: true });
-  const setup = {
-    run,
-    round: nextRound(root),
-    subject_id: snap.subjectId,
-    stage,
-    stage_hash: stageHash,
-    cli,
-    selection: { tier: options.tier, flow: options.flow },
-    selected: selected.map((flow) => flow.id),
-  };
-  writeFileSync(join(dir, "setup.json"), `${JSON.stringify(setup, null, 2)}\n`);
-
-  if (!cli.problem) {
-    await drive(plan(selected, base), { cli: cli.path, plugin: join(stage, PLUGIN), out: join(dir, "traces"), jobs: options.jobs });
+  const base = sandboxBase();
+  try {
+    const { stage, stageHash, stageSeal } = buildStage(snap, join(dir, "stage"));
+    const cli = doctor(sandbox(join(base, "doctor")));
+    const sessions = cli.problem ? [] : plan(selected, base);
+    const setup = {
+      run,
+      round: nextRound(root),
+      subject_id: snap.subjectId,
+      tree_id: snap.treeId,
+      stage,
+      stage_hash: stageHash,
+      stage_seal: stageSeal,
+      sandbox: base,
+      cli,
+      selection: { tier: options.tier, flow: options.flow },
+      selected: selected.map((flow) => flow.id),
+      checks: checks.map(({ id, file, sha256 }) => ({ id, file, sha256 })),
+      sessions: sessions.map(({ id, name, cwd }) => ({ check: id, name, cwd })),
+    };
+    writeFileSync(join(dir, "setup.json"), `${JSON.stringify(setup, null, 2)}\n`);
+    await drive(sessions, { cli: cli.path, plugin: join(stage, PLUGIN), out: join(dir, "traces"), jobs: options.jobs });
+  } catch (err) {
+    // A run that stopped before its setup record leaves nothing to check.
+    if (!existsSync(join(dir, "setup.json"))) rmSync(dir, { recursive: true, force: true });
+    throw err;
+  } finally {
+    rmSync(base, { recursive: true, force: true });
   }
-  discardSandboxes(base);
 
   const result = await report(dir);
-  recordRound(root, result);
-  prune(root, sandboxRoot(root));
+  const dropped = recordRound(root, result);
+  if (dropped.length) console.log(`the round count stands: this pass held no check ${dropped.join(", ")}, which a failed round did`);
+  prune(root);
   return result;
 }
 
 function runDirectory(given) {
   const dir = resolve(given);
   if (existsSync(join(dir, "setup.json"))) return dir;
-  const runs = existsSync(join(dir, "runs")) ? readdirSync(join(dir, "runs")).sort() : [];
+  const runs = existsSync(join(dir, "runs")) ? readdirSync(join(dir, "runs")).filter((run) => existsSync(join(dir, "runs", run, "setup.json"))).sort() : [];
   if (!runs.length) throw new UsageError(`${given} is neither a run directory nor an evidence root with runs`);
   return join(dir, "runs", runs.at(-1));
 }
@@ -118,7 +136,7 @@ function runDirectory(given) {
 async function main() {
   const args = process.argv.slice(2);
   if (args[0] === "check" && args.length !== 2) throw new UsageError(USAGE);
-  const result = args[0] === "check" ? await report(runDirectory(args[1])) : await verify(parse(args));
+  const result = args[0] === "check" ? await report(runDirectory(args[1]), { rechecked_at: new Date().toISOString() }) : await verify(parse(args));
   if (result.verdict === "FAIL") process.exit(1);
 }
 

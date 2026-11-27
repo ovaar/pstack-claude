@@ -4,12 +4,15 @@
 // recorded on CLI 2.1.332 (tool_use, tool_result, the skill body, a replayed
 // slash command); the first unit that makes model calls should swap them for
 // its own recordings.
-import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { afterEach, expect, test } from "bun:test";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { readTrace } from "../../tools/verify/trace.mjs";
+import { readRun, readTrace } from "../../tools/verify/trace.mjs";
+import { cleanup, tempDir } from "./harness.mjs";
 import { FIXTURES } from "./scrub.mjs";
+
+afterEach(cleanup);
 
 const recorded = (name) => readTrace(readFileSync(join(FIXTURES, `${name}.jsonl`), "utf8"));
 const stream = (...events) => events.map((event) => `${JSON.stringify(event)}\n`).join("");
@@ -128,4 +131,29 @@ test("a line that is not JSON is counted, not dropped in silence", () => {
   expect(trace.init()).not.toBeNull();
   expect(trace.result()).toBeNull();
   expect(trace.resultText()).toBeNull();
+});
+
+// The exit code and the signal are in the sidecar and stay there. How the
+// session ended is handed on for observations: its first line of stderr,
+// whether the driver stopped it, whether it started at all.
+test("a run is read without its exit code, and with how it ended", () => {
+  const dir = tempDir();
+  writeFileSync(join(dir, "context.jsonl"), stream({ type: "system", subtype: "init" }));
+  writeFileSync(join(dir, "context.stderr"), "error: unknown option '--plugin-dir'\nsecond line\n");
+  writeFileSync(join(dir, "context.sidecar.json"), JSON.stringify({ argv: ["claude", "-p"], exit_code: 1, signal: "SIGKILL", timed_out: true, spawn_error: null, trace_sha256: "abc" }));
+  const { trace, ...run } = readRun(dir, "context");
+  expect(run).toEqual({
+    name: "context",
+    sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+    recordedSha256: "abc",
+    argv: ["claude", "-p"],
+    ended: { stderr: "error: unknown option '--plugin-dir'", timedOut: true, spawnError: null },
+  });
+  expect(trace.init()).not.toBeNull();
+});
+
+test("a run with no sidecar and no stderr file is read as one that ended quietly", () => {
+  const dir = tempDir();
+  writeFileSync(join(dir, "context.jsonl"), "");
+  expect(readRun(dir, "context")).toMatchObject({ recordedSha256: null, argv: [], ended: { stderr: "", timedOut: false, spawnError: null } });
 });

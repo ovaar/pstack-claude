@@ -35,8 +35,9 @@ test.each([
   ["a /Users/ path", '{"memory":"projects/-Users-someone-project/memory"}'],
   ["a /home/ path", '{"cwd":"/home/someone/project"}'],
   ["a temp directory of the recording machine", '{"cwd":"/private/var/folders/ab/cdef/T/run"}'],
-  ["the local user name", '{"user":"someone"}'],
-  ["the machine name", '{"host":"build-box.local"}'],
+  ["the local user name", '{"mount":"/Volumes/someone/project"}'],
+  ["the local user name", '{"remote":"someone@build-box.local:project.git"}'],
+  ["the machine name", '{"remote":"git@build-box.local:project.git"}'],
   ["an email address, a token-shaped string or a home path", `{"account":"${address}"}`],
   ["an email address, a token-shaped string or a home path", `{"key":"${token}"}`],
   [`more than ${MAX_BYTES} bytes`, "x".repeat(MAX_BYTES + 1)],
@@ -44,6 +45,19 @@ test.each([
   expect(leaks(text, "someone", "build-box.local")).toContain(finding);
 });
 
-test("the scan leaves a name inside a longer identifier alone", () => {
-  expect(leaks('{"skill":"pstack:principle-fix-root-causes","plugin":"pstack@inline"}', "root", "build-box.local")).toEqual([]);
+// The account that runs these tests may be called user, claude, code or
+// test, and its machine sandbox or local: all words of every recording.
+const WORDS = '{"type":"user","model":"claude-haiku-5-5","skill":"pstack:principle-fix-root-causes","plugin":"pstack@inline","text":"run the test in a sandbox, local code only"}';
+
+test.each([["user"], ["claude"], ["code"], ["test"], ["root"], ["sandbox"], ["local"]])("a word of the recordings is no leak when the account or the machine is called %s", (name) => {
+  expect(leaks(WORDS, name, name)).toEqual([]);
+});
+
+// Whoever records knows their own name, so the tool that writes a fixture
+// refuses it wherever it stands.
+test("for the one who records, their name anywhere is a leak", () => {
+  const text = '{"note":"written by someone on build-box"}';
+  expect(leaks(text, "someone", "build-box")).toEqual([]);
+  expect(leaks(text, "someone", "build-box", { strict: true })).toEqual(["the local user name", "the machine name"]);
+  expect(leaks(WORDS, "root", "causes", { strict: true })).toEqual([]);
 });

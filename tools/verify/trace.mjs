@@ -6,7 +6,9 @@
 // Two things are missing on purpose. There is no accessor for what a model
 // wrote: a model can say it ran a skill it never ran, so no verdict may rest
 // on its text. And a run's exit code is not handed on: the process exited 0
-// with a broken hook and 1 at an expected stop.
+// with a broken hook and 1 at an expected stop. How a session ended is
+// offered for observations alone, to tell a CLI that never started from a
+// plugin that failed.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -155,13 +157,14 @@ export const runNames = (dir) =>
 export function readRun(dir, name) {
   const file = (suffix) => join(dir, `${name}${suffix}`);
   const bytes = readFileSync(file(".jsonl"));
-  const sidecar = existsSync(file(".sidecar.json")) ? JSON.parse(readFileSync(file(".sidecar.json"), "utf8")) : {};
-  const transcript = existsSync(file(".transcript.jsonl")) ? readFileSync(file(".transcript.jsonl"), "utf8") : "";
+  const text = (suffix) => (existsSync(file(suffix)) ? readFileSync(file(suffix), "utf8") : "");
+  const sidecar = JSON.parse(text(".sidecar.json") || "{}");
   return {
     name,
-    trace: readTrace(bytes.toString("utf8"), transcript),
+    trace: readTrace(bytes.toString("utf8"), text(".transcript.jsonl")),
     sha256: sha256(bytes),
     recordedSha256: sidecar.trace_sha256 ?? null,
     argv: sidecar.argv ?? [],
+    ended: { stderr: text(".stderr").trim().split("\n")[0], timedOut: sidecar.timed_out === true, spawnError: sidecar.spawn_error ?? null },
   };
 }
