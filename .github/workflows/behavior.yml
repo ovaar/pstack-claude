@@ -1,0 +1,101 @@
+name: Claude Code behavior
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: behavior-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  surface:
+    name: Claude Code surface (no model calls)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.4"
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      # The version comes from tools/verify/cli-pin.json, the file the
+      # verifier reads, so a bump is one edit. The Pi job in ci.yml passes
+      # --ignore-scripts --before; this install does not, because the CLI
+      # needs its postinstall script and the platform package it pulls in.
+      - name: Install the Claude Code CLI at the pinned version
+        run: | # zizmor: ignore[adhoc-packages]
+          set -eo pipefail
+          version=$(jq -er .verified tools/verify/cli-pin.json)
+          if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "tools/verify/cli-pin.json verified is not a version: $version"
+            exit 1
+          fi
+          npm install -g "@anthropic-ai/claude-code@$version"
+          # The verifier checks only a minimum, so a different claude earlier
+          # on PATH would be tested without anyone noticing.
+          actual=$(claude --version)
+          if [ "$actual" != "$version (Claude Code)" ]; then
+            echo "::error title=Wrong Claude Code on PATH::claude on PATH is $actual, the pin is $version"
+            exit 1
+          fi
+          echo "$actual"
+      # No model call and no secret: the surface tier starts the CLI to read
+      # its startup events and never sends a prompt. The verifier prints its
+      # verdict first. SKIPPED, STAND-IN and FAIL are failures here (the
+      # first two exit 0 from the verifier, and each means a check did not
+      # judge the CLI a user has). PSTACK_VERIFY_REQUIRE_CLI turns a missing
+      # CLI into FAIL. --tier surface leaves later tiers out, so once a
+      # behavior check exists the verifier prints PARTIAL for them. That
+      # passes only when every surface check passed and each other tier is
+      # NOT RUN or NOT BUILT; a PARTIAL with a surface check missing fails.
+      # Evidence goes outside the checkout.
+      - name: Verify the plugin loads and starts in Claude Code
+        env:
+          PSTACK_VERIFY_REQUIRE_CLI: "1"
+        run: |
+          set -eo pipefail
+          status=0
+          bun tools/verify.mjs --tier surface --evidence "$RUNNER_TEMP/verify" > "$RUNNER_TEMP/verdict.txt" || status=$?
+          cat "$RUNNER_TEMP/verdict.txt"
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          first=$(head -n 1 "$RUNNER_TEMP/verdict.txt")
+          ok=0
+          if [[ $first == PASS\ * ]]; then
+            ok=1
+          elif [[ $first =~ ^PARTIAL\ surface\ ([1-9][0-9]*)/([0-9]+)\ \|\ (.*)\ \|\ round\ [0-9]+$ ]] && [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[2]}" ]; then
+            ok=1
+            IFS='|' read -ra others <<< "${BASH_REMATCH[3]}"
+            for other in "${others[@]}"; do
+              [[ $other =~ ^\ ?[a-z]+\ NOT\ (RUN|BUILT)\ ?$ ]] || ok=0
+            done
+          fi
+          if [ "$ok" -ne 1 ]; then
+            echo "::error title=Surface checks not PASS::$first"
+            exit 1
+          fi
+      - name: Show the evidence in the job summary
+        if: ${{ !cancelled() }}
+        run: |
+          for report in "$RUNNER_TEMP"/verify/runs/*/evidence.md; do
+            [ -f "$report" ] && cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit 0
+      - name: Upload the evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: claude-surface-evidence
+          path: ${{ runner.temp }}/verify
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 14
