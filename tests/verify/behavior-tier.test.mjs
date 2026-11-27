@@ -158,6 +158,13 @@ describe("what the first line says", () => {
     expect(judged.cost_usd).toBeLessThan(BUDGET_USD);
   });
 
+  // The words of the first line, over every shipped check at once.
+  test("with every check run and every one passing, the word is PASS and the line holds both tiers", async () => {
+    const parts = await Promise.all(["S2", "S3", "B1", "B2", "B3", "B4", "B5"].map(shipped));
+    const judged = await check(evidence({ checks: CHECKS_DIR, skills: true, behavior: true, runs: parts.flatMap((part) => part.runs) }));
+    expect(judged.line).toMatch(/^PASS surface 2\/2 \| behavior 5\/5 \(\d+ model calls, \$0\.\d{4}\) \| round 1$/);
+  });
+
   test("a run that cost more than its budget fails whatever its checks found", async () => {
     const B1 = await shipped("B1");
     const judged = await check(evidence(B1, { "B1.attempt-1": { events: (events) => void (lastResult(events).total_cost_usd = BUDGET_USD + 0.1) } }));
