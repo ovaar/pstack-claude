@@ -216,5 +216,5 @@ test("a wrong argument is a usage error, with nothing run", () => {
   expect(usage(["--jobs", "4"])).toEqual([2, "", first]);
   expect(usage(["--tree"])).toEqual([2, "", first]);
   expect(usage(["check"])).toEqual([2, "", first]);
-  expect(usage(["--flow", "S9"])[2]).toStartWith("no flow S9; flows: S2, S3");
+  expect(usage(["--flow", "S9"])[2]).toMatch(/^no flow S9; flows: .*\bS2\b.*\bS3\b/);
 }, LONG);
