@@ -19,6 +19,10 @@ import { sha256 } from "./stage.mjs";
 // command's output.
 const SYNTHETIC = "<synthetic>";
 
+// The tools that change a file. A denied call is still a call: the stream
+// carries the tool_use block whether or not the permission mode let it run.
+const CHANGES = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+
 function records(text) {
   const parsed = [];
   let malformed = 0;
@@ -55,6 +59,7 @@ export function readTrace(stream, transcript = "") {
       subtype: event.subtype,
       isError: event.is_error === true,
       costUsd: event.total_cost_usd,
+      terminalReason: event.terminal_reason ?? null,
       turns: event.num_turns,
       models: Object.keys(event.modelUsage ?? {}),
       permissionDenials: (event.permission_denials ?? []).map((denial) => ({ tool: denial.tool_name, input: denial.tool_input })),
@@ -67,6 +72,20 @@ export function readTrace(stream, transcript = "") {
     const named = [...results().flatMap((result) => result.models), ...ofType("assistant").map((event) => event.message?.model)];
     return [...new Set(named.filter((model) => model && model !== SYNTHETIC))];
   };
+
+  // One API call is one message id, however many content blocks the CLI
+  // streams for it. A message the CLI wrote itself is no call.
+  const modelCalls = () => new Set(ofType("assistant").filter((event) => event.message?.model && event.message.model !== SYNTHETIC).map((event) => event.message.id)).size;
+
+  const toolUses = () =>
+    ofType("assistant").flatMap((event) =>
+      blocks(event, "tool_use").map((block) => ({ id: block.id, name: block.name, input: block.input, parentToolUseId: event.parent_tool_use_id ?? null })),
+    );
+
+  const toolResults = () =>
+    ofType("user").flatMap((event) =>
+      blocks(event, "tool_result").map((block) => ({ toolUseId: block.tool_use_id, isError: block.is_error === true, text: textOf(block.content) })),
+    );
 
   const userEvents = () =>
     ofType("user")
@@ -111,15 +130,29 @@ export function readTrace(stream, transcript = "") {
     result: () => results().at(-1) ?? null,
     models,
 
-    toolUses: () =>
-      ofType("assistant").flatMap((event) =>
-        blocks(event, "tool_use").map((block) => ({ id: block.id, name: block.name, input: block.input, parentToolUseId: event.parent_tool_use_id ?? null })),
-      ),
+    toolUses,
+    toolResults,
+    modelCalls,
 
-    toolResults: () =>
-      ofType("user").flatMap((event) =>
-        blocks(event, "tool_result").map((block) => ({ toolUseId: block.tool_use_id, isError: block.is_error === true, text: textOf(block.content) })),
-      ),
+    // What the session itself did, in order: each call made at the top level,
+    // with the skill it asked for, whether it changes a file, and what came
+    // back. A subagent's calls are its own and are left out.
+    calls: () => {
+      const returned = toolResults();
+      return toolUses()
+        .filter((use) => use.parentToolUseId === null)
+        .map((use, index) => ({
+          index,
+          name: use.name,
+          input: use.input ?? {},
+          skill: use.name === "Skill" ? (use.input?.skill ?? null) : null,
+          changes: CHANGES.includes(use.name),
+          result: returned.find((each) => each.toolUseId === use.id) ?? null,
+        }));
+    },
+
+    // The `error` the CLI puts on a message it wrote for a failed API call.
+    assistantErrors: () => ofType("assistant").flatMap((event) => (event.error ? [event.error] : [])),
 
     userEvents,
     replays: () => userEvents().filter((event) => event.isReplay),
