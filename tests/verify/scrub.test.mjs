@@ -38,7 +38,7 @@ test("a transcript keeps the user lines and the unknown-command records, each us
 });
 
 test("the stage and the sandbox become placeholders, and every session id a numbered one", () => {
-  const out = scrub('{"cwd":"/s/stage/x","a":"0343da51-7150-4aab-bd03-e634ead8b33c","b":"0343da51-7150-4aab-bd03-e634ead8b33c","sandbox":"/s/box"}', "/s/stage", "/s/box");
+  const out = scrub('{"cwd":"/s/stage/x","a":"12345678-90ab-4cde-8f01-234567890abc","b":"12345678-90ab-4cde-8f01-234567890abc","sandbox":"/s/box"}', "/s/stage", "/s/box");
   expect(out).toBe('{"cwd":"<STAGE>/x","a":"00000000-0000-4000-8000-000000000001","b":"00000000-0000-4000-8000-000000000001","sandbox":"<SANDBOX>"}');
 });
 

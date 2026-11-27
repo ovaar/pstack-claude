@@ -110,7 +110,7 @@ test("for the one who records, their name anywhere is a leak", () => {
 test("every UUID-shaped string must carry the placeholder prefix", () => {
   expect(PLACEHOLDER).toBe("00000000-0000-4000-8000-");
   expect(leaks(`{"id":"${PLACEHOLDER}000000000007"}`, "someone", "build-box")).toEqual([]);
-  for (const real of ["ea288b2b-45df-4011-9af1-0ef1efbf16d1", "EA288B2B-45DF-4011-9AF1-0EF1EFBF16D1", "00000000-0000-4000-8001-000000000001"]) {
+  for (const real of ["abcdef01-2345-4678-9abc-def012345678", "ABCDEF01-2345-4678-9ABC-DEF012345678", "00000000-0000-4000-8001-000000000001"]) {
     expect(leaks(`{"id":"${real}"}`, "someone", "build-box")).toContain("a UUID that is not a placeholder");
   }
 });
@@ -118,19 +118,19 @@ test("every UUID-shaped string must carry the placeholder prefix", () => {
 // The API's request and message ids and a tool call's id name an account's
 // usage on the server, as do a background agent's and a run's.
 describe("server-side ids", () => {
-  const real = { req: "req_011ChTd9Wv8mQx4kZ2pLrNaB", msg: "msg_011ChTd97m8aA7Vb8ME2c4Tc", toolu: "toolu_01WkT2wgYpQ5mHnXr9cDfBeA" };
+  const real = { req: "req_011AAAAAAAAAAAAAAAAAAAAA", msg: "msg_011BBBBBBBBBBBBBBBBBBBBB", toolu: "toolu_01CCCCCCCCCCCCCCCCCCCCCC" };
   test.each(Object.entries(real))("a real %s id is a leak, a placeholder one is not", (_, id) => {
     expect(leaks(`{"id":"${id}"}`, "someone", "build-box")).toContain("a server-side id that is not a placeholder");
     expect(leaks(`{"id":"${renumber(id)}"}`, "someone", "build-box")).toEqual([]);
   });
 
   test.each([["agent_id"], ["task_id"], ["run_id"], ["agentId"]])("a real %s is a leak", (key) => {
-    expect(leaks(`{"${key}":"a6ad5855a5318f41c"}`, "someone", "build-box")).toContain("a server-side id that is not a placeholder");
-    expect(leaks(`{"${key}":"${renumber(`{"${key}":"a6ad5855a5318f41c"}`).match(/:"([^"]+)"/)[1]}"}`, "someone", "build-box")).toEqual([]);
+    expect(leaks(`{"${key}":"a0b1c2d3e4f5a6b7c"}`, "someone", "build-box")).toContain("a server-side id that is not a placeholder");
+    expect(leaks(`{"${key}":"${renumber(`{"${key}":"a0b1c2d3e4f5a6b7c"}`).match(/:"([^"]+)"/)[1]}"}`, "someone", "build-box")).toEqual([]);
   });
 
   test("renumbering keeps what links two events: one id, one placeholder, and a name that is no id is left", () => {
-    const text = `${real.toolu} ${real.msg} ${real.toolu} msg_lifecycle_v1 "agent_id":"a6ad5855a5318f41c" in /tasks/a6ad5855a5318f41c.output`;
+    const text = `${real.toolu} ${real.msg} ${real.toolu} msg_lifecycle_v1 "agent_id":"a0b1c2d3e4f5a6b7c" in /tasks/a0b1c2d3e4f5a6b7c.output`;
     const out = renumber(text);
     const [call, message, again] = out.split(" ");
     expect(call).toBe(again);
@@ -141,10 +141,10 @@ describe("server-side ids", () => {
   });
 
   test("a scrubbed signed-in trace carries none of them", () => {
-    const line = JSON.stringify({ type: "assistant", request_id: real.req, message: { id: real.msg, content: [{ type: "tool_use", id: real.toolu }] }, agent_id: "a6ad5855a5318f41c" });
+    const line = JSON.stringify({ type: "assistant", request_id: real.req, message: { id: real.msg, content: [{ type: "tool_use", id: real.toolu }] }, agent_id: "a0b1c2d3e4f5a6b7c" });
     const out = scrub(`${line}\n`, "/s/stage", "/s/sandbox", { home: "/Users/someone", user: "someone", host: "build-box", tmp: [] });
     expect(leaks(out, "someone", "build-box", { strict: true })).toEqual([]);
-    for (const id of [...Object.values(real), "a6ad5855a5318f41c"]) expect(out).not.toContain(id);
+    for (const id of [...Object.values(real), "a0b1c2d3e4f5a6b7c"]) expect(out).not.toContain(id);
   });
 
   test("the committed recordings hold no real one", () => {
@@ -169,7 +169,7 @@ test("the recorded model-tier sessions together made no more calls than a run ma
 // What a signed-in session leaves in its stream, in the shape the CLI writes.
 describe("scrub", () => {
   const machine = { home: "/Users/someone", user: "someone", host: "Build-Box.local", tmp: [] };
-  const session = "ea288b2b-45df-4011-9af1-0ef1efbf16d1";
+  const session = "abcdef01-2345-4678-9abc-def012345678";
   const lines = [
     { type: "system", subtype: "init", session_id: session, cwd: "/private/var/folders/ab/T/pstack-verify-x/B1/attempt-1/cwd", memory_paths: { auto: "/Users/someone/.claude/projects/-private-var-folders-ab-T-pstack-verify-x-B1-attempt-1-cwd/memory/" }, uuid: "11111111-2222-4333-8444-555555555555" },
     { type: "rate_limit_event", rate_limit_info: { status: "allowed", utilization: 0.5 }, session_id: session },
