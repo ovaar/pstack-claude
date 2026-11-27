@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 
-import { BYPASS_LINE, decide, hitsOf, isWatched, judgeLine, prePushHits, segments } from "../../tools/verify/gate.mjs";
+import { BYPASS_LINE, decide, hitsOf, isWatched, judgeLine, prePushHits, segments, VERIFIER_TIMEOUT_MS } from "../../tools/verify/gate.mjs";
 import { WATCHED } from "../../tools/verify/paths.mjs";
 import { cleanup, git, productRepo, tempDir } from "./harness.mjs";
 
@@ -25,6 +25,16 @@ const BUN_DIR = dirname(process.execPath);
 const WITHOUT_CLAUDE = process.env.PATH.split(delimiter).filter((dir) => !existsSync(join(dir, "claude")));
 const PATH = [BUN_DIR, ...WITHOUT_CLAUDE].join(delimiter);
 const LONG = 90_000;
+
+// Claude Code never shows the agent stderr from a hook that exits 0. What a
+// passing hook says to the agent is JSON on stdout: `additionalContext` goes to
+// the model and `systemMessage` to the person.
+function agentSees({ stdout }) {
+  const output = JSON.parse(stdout);
+  expect(output.systemMessage).toBe(output.hookSpecificOutput.additionalContext);
+  expect(output.hookSpecificOutput.hookEventName).toBe("PreToolUse");
+  return output.hookSpecificOutput.additionalContext;
+}
 
 // --- the table of command lines -----------------------------------------
 
@@ -240,7 +250,7 @@ test.skipIf(process.platform === "win32")("the Claude Code hook lets ordinary co
   for (const command of ['echo "git push"', "git commit -m 'git push'", "grep -r 'gh pr create' docs"]) {
     expect([command, hook(command, { cwd: repo }).status]).toEqual([command, 0]);
     const without = hook(command, { cwd: repo, path: NO_BUN });
-    expect([command, without.status, without.stderr]).toEqual([command, 0, expect.stringContaining("bun is not on PATH")]);
+    expect([command, without.status, without.stderr, agentSees(without)]).toEqual([command, 0, "", expect.stringContaining("bun is not on PATH")]);
   }
 });
 
@@ -282,7 +292,8 @@ test.skipIf(process.platform === "win32")("the Claude Code hook gates `gh pr cre
 test.skipIf(process.platform === "win32")("the bypass allows, and says so, only when the session was started with it", () => {
   const { repo } = pushable();
   watchedChange(repo);
-  expect(hook("git push", { cwd: repo, env: { PSTACK_VERIFY_GATE: "off" } })).toMatchObject({ status: 0, stderr: `${BYPASS_LINE}\n` });
+  const bypassed = hook("git push", { cwd: repo, env: { PSTACK_VERIFY_GATE: "off" } });
+  expect([bypassed.status, bypassed.stderr, agentSees(bypassed)]).toEqual([0, "", BYPASS_LINE]);
   // Typed in the command, it is a word of the command and decides nothing.
   expect(hook("PSTACK_VERIFY_GATE=off git push", { cwd: repo }).status).toBe(2);
   // Not a push: nothing to say.
@@ -400,3 +411,35 @@ test.skipIf(process.platform === "win32")("the project settings register the hoo
   expect(spawnSync("/bin/sh", ["-c", command], { input: payload, encoding: "utf8", env }).status).toBe(2);
   expect(spawnSync("/bin/sh", ["-c", command], { input: payload.replace("git push", "git status"), encoding: "utf8", env }).status).toBe(0);
 }, LONG);
+
+// --- the gate fails closed ------------------------------------------------
+
+// Claude Code lets the tool run when a PreToolUse hook exits with anything but
+// 0 or 2, or when it times out. A gate that crashes must therefore say 2 itself.
+test.skipIf(process.platform === "win32")("a gate that crashes blocks the push with exit 2, not a stack trace and exit 1", () => {
+  const { repo } = pushable();
+  watchedChange(repo);
+  const crashed = hook("git push", { cwd: repo, env: { TMPDIR: join(tmp, "missing", "dir") } });
+  expect(crashed.status).toBe(2);
+  expect(crashed.stderr).toMatch(/verify gate: .*crashed.*push is refused/s);
+  expect(crashed.stderr).toContain("Do not set it");
+}, LONG);
+
+test.skipIf(process.platform === "win32")("a bun that dies, or a payload that is not JSON, blocks a command that looks like a push", () => {
+  const { repo } = pushable();
+  const fake = tempDir();
+  writeFileSync(join(fake, "bun"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  const died = hook("git push", { cwd: repo, path: `${fake}:/usr/bin:/bin` });
+  expect(died.status).toBe(2);
+  expect(died.stderr).toContain("exit 1");
+  const raw = spawnSync("/bin/sh", [HOOK], { input: "git push, but not a JSON payload", encoding: "utf8", env: { PATH, HOME: tmp, TMPDIR: tmp } });
+  expect(raw.status).toBe(2);
+  expect(raw.stderr).toContain("could not read");
+});
+
+test("the settings make a hook that fails or times out block, and the gate ends before the hook is cut off", () => {
+  const root = join(import.meta.dir, "../..");
+  const [{ onFailure, timeout }] = JSON.parse(readFileSync(join(root, ".claude/settings.json"), "utf8")).hooks.PreToolUse[0].hooks;
+  expect(onFailure).toBe("block");
+  expect(timeout * 1000).toBeGreaterThan(VERIFIER_TIMEOUT_MS);
+});

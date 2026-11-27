@@ -30,6 +30,7 @@ import { gitEnv } from "./setup.mjs";
 
 const VERIFY = fileURLToPath(new URL("../verify.mjs", import.meta.url));
 export const BYPASS_LINE = "verify gate bypassed by PSTACK_VERIFY_GATE=off";
+export const VERIFIER_TIMEOUT_MS = 10 * 60_000;
 const MAX_ROUNDS = 3;
 const ZEROS = /^0+$/;
 
@@ -233,7 +234,7 @@ export function verifyCommit(dir, sha, env = process.env) {
     const run = spawnSync(process.execPath, [VERIFY, "--tier", "surface", "--tree", tree, "--evidence", join(evidence, "pstack-verify")], {
       encoding: "utf8",
       env: gitEnv(env),
-      timeout: 10 * 60_000,
+      timeout: VERIFIER_TIMEOUT_MS,
       maxBuffer: 1 << 28,
     });
     if (run.error) return `FAIL the verifier did not run: ${run.error.message}`;
@@ -291,28 +292,47 @@ export function prePushHits(env, stdin, cwd = process.cwd()) {
   return refs.filter((ref) => !ZEROS.test(ref.sha)).map((ref) => ({ kind: "push", dir: cwd, remote, ...ref }));
 }
 
+// One line to the agent and the person from a hook that allows the call. Claude
+// Code never shows the agent stderr from a hook that exits 0.
+export const allowNote = (message) => JSON.stringify({ systemMessage: message, hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: message } });
+
 async function main(argv, env, stdin) {
   const entry = argv[0];
   if (!["hook", "pre-push"].includes(entry)) {
     console.error("usage: bun tools/verify/gate.mjs hook|pre-push");
     return 2;
   }
+  const blocked = entry === "hook" ? 2 : 1;
   let hits;
   if (entry === "hook") {
     try {
       hits = hookHits(JSON.parse(stdin));
     } catch {
-      // A payload this gate cannot read is not a push it can see.
-      return 0;
+      // The shell filter only hands over a payload that looks like a push.
+      console.error(`verify gate: could not read the hook payload, so the command is refused. ${HUMAN_BYPASS}`);
+      return blocked;
     }
   } else hits = prePushHits(env, stdin);
   const verdict = await decide({ hits, env }, gitIo(env));
-  if (verdict.message) console.error(verdict.message);
-  return verdict.allow ? 0 : entry === "hook" ? 2 : 1;
+  if (verdict.allow && verdict.message && entry === "hook") console.log(allowNote(verdict.message));
+  else if (verdict.message) console.error(verdict.message);
+  return verdict.allow ? 0 : blocked;
+}
+
+// A gate that throws must not let the push through: Claude Code runs the tool
+// when a PreToolUse hook exits with anything but 0 or 2, and git stops a push
+// on any nonzero exit.
+async function guarded(argv, env, stdin) {
+  try {
+    return await main(argv, env, stdin);
+  } catch (error) {
+    console.error(`verify gate: the gate crashed, so the push is refused: ${error?.message ?? error}. ${HUMAN_BYPASS}`);
+    return argv[0] === "pre-push" ? 1 : 2;
+  }
 }
 
 if (isMain(import.meta.url)) {
   // A terminal has no stdin to read: git and pre-commit pipe or close it.
   const stdin = process.stdin.isTTY ? "" : readFileSync(0, "utf8");
-  process.exit(await main(process.argv.slice(2), process.env, stdin));
+  process.exit(await guarded(process.argv.slice(2), process.env, stdin));
 }

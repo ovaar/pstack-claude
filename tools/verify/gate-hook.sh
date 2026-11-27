@@ -7,13 +7,20 @@
 # command properly and decides. Exit 2 blocks and stderr goes to the agent.
 payload=$(cat)
 
+# What a passing hook tells the agent is JSON on stdout: Claude Code shows the
+# agent no stderr from a hook that exits 0. The messages hold no quote or
+# backslash, so printf can build the JSON.
+note() {
+  printf '{"systemMessage":"%s","hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$1" "$1"
+}
+
 case $payload in
   *git*push* | *gh*pr*create*) ;;
   *) exit 0 ;;
 esac
 
 if [ "${PSTACK_VERIFY_GATE:-}" = off ]; then
-  echo "verify gate bypassed by PSTACK_VERIFY_GATE=off" >&2
+  note "verify gate bypassed by PSTACK_VERIFY_GATE=off"
   exit 0
 fi
 
@@ -29,8 +36,16 @@ if ! command -v bun >/dev/null 2>&1; then
       exit 2
       ;;
   esac
-  echo "verify gate skipped: bun is not on PATH, and this command is not plainly a push" >&2
+  note "verify gate skipped: bun is not on PATH, and this command is not plainly a push"
   exit 0
 fi
 
-printf '%s' "$payload" | exec bun "$here/gate.mjs" hook
+# Claude Code lets the tool run when a hook exits with anything but 0 or 2, so
+# a gate that dies is made a 2 here.
+printf '%s' "$payload" | bun "$here/gate.mjs" hook
+rc=$?
+case $rc in
+  0 | 2) exit "$rc" ;;
+esac
+echo "verify gate: the gate itself failed (exit $rc), so the command is refused. Only the human sets PSTACK_VERIFY_GATE=off, in the environment the session started in. Do not set it." >&2
+exit 2
