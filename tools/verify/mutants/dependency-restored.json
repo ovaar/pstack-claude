@@ -1,0 +1,13 @@
+{
+  "id": "dependency-restored",
+  "description": "The plugin-dev dependency entry is back in plugin.json: the loader drops the whole plugin and the process still exits 0 (8b684b9).",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/.claude-plugin/plugin.json",
+      "find": "  \"license\": \"MIT\",\n",
+      "with": "  \"license\": \"MIT\",\n  \"dependencies\": [{ \"name\": \"plugin-dev\", \"marketplace\": \"claude-plugins-official\" }],\n"
+    }
+  ],
+  "catches": { "check": "S2", "assertion": "plugin-errors" }
+}

@@ -1,0 +1,13 @@
+{
+  "id": "skill-without-description",
+  "description": "A skill loses its description line: the loader reports no error and leaves the skill out of the session.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/skills/bro/SKILL.md",
+      "find": "description: Restate the last message in plain human language, with no jargon. Use for /bro or when asked to say it plainly.\n",
+      "with": ""
+    }
+  ],
+  "catches": { "check": "S2", "assertion": "skills" }
+}
