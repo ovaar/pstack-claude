@@ -78,7 +78,27 @@ const TABLE = [
   ["(git push)", [PUSH]],
   ["echo $(git push)", [PUSH]],
   ["if true; then git push; fi", [PUSH]],
+  ["sudo git push", [PUSH]],
+  ["sudo -u bob -E git push", [PUSH]],
+  ["timeout 600 git push", [PUSH]],
+  ["timeout -k 5 --signal=TERM 600 git push", [PUSH]],
+  ["nice git push", [PUSH]],
+  ["nice -n 10 git push", [PUSH]],
+  ["xargs git push", [PUSH]],
+  ["xargs -n1 -I{} git push {}", [PUSH]],
+  ["gh pr new --fill", [PR]],
+  ["git -c alias.p=push p", [PUSH]],
+  ["git -c user.name=x -c alias.up='push --force' up origin", [PUSH]],
+  ["git -c alias.p='!git push' p", [PUSH]],
+  ["bash -c -- 'git push'", [PUSH]],
+  ["bash -lc 'git push'", [PUSH]],
+  ["gi''t push", [PUSH]],
+  ["g\\it push", [PUSH]],
   // Not a push: the words are data, the subcommand differs, or the program does.
+  ["git -c alias.p=status p", []],
+  ["sudo ls", []],
+  ["timeout 600 ls", []],
+  ["xargs echo git push", []],
   ['echo "git push"', []],
   ["echo git push", []],
   ["echo 'a; git push'", []],
@@ -443,3 +463,12 @@ test("the settings make a hook that fails or times out block, and the gate ends 
   expect(onFailure).toBe("block");
   expect(timeout * 1000).toBeGreaterThan(VERIFIER_TIMEOUT_MS);
 });
+
+// Each of these is a push the parser sees. The shell filter in front of it
+// must not be stricter than the parser, or it never gets the chance.
+test.skipIf(process.platform === "win32")("the Claude Code hook blocks the push spellings the parser reads, quoted, wrapped or aliased", () => {
+  const { repo } = pushable();
+  watchedChange(repo);
+  const spellings = ["gi''t push", "g\\it push", 'g"i"t push', "gh pr new --fill", "gh pr cr''eate", "sudo git push", "timeout 600 git push", "nice git push", "xargs git push", "git -c alias.p=push p", "bash -c -- 'git push'"];
+  for (const command of spellings) expect([command, hook(command, { cwd: repo }).status]).toEqual([command, 2]);
+}, 12 * LONG);

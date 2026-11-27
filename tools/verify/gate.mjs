@@ -87,24 +87,51 @@ const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh"]);
 const GIT_VALUE_OPTIONS = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix", "--config-env"]);
 const GH_VALUE_OPTIONS = new Set(["-R", "--repo", "--hostname"]);
 
+// Programs that run the rest of their line as a command. For each: the
+// options that take their value as the next word, and how many plain words
+// come before the command (timeout's duration).
+const WRAPPERS = new Map([
+  ["sudo", { values: ["-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U", "-r", "-t", "--user", "--group", "--host", "--prompt", "--close-from", "--chdir", "--chroot", "--role", "--type"], words: 0 }],
+  ["doas", { values: ["-u", "-C"], words: 0 }],
+  ["timeout", { values: ["-k", "-s", "--kill-after", "--signal"], words: 1 }],
+  ["gtimeout", { values: ["-k", "-s", "--kill-after", "--signal"], words: 1 }],
+  ["nice", { values: ["-n", "--adjustment"], words: 0 }],
+  ["xargs", { values: ["-I", "-n", "-L", "-P", "-s", "-d", "-E", "-a", "-J", "--max-args", "--max-procs", "--max-lines", "--delimiter", "--arg-file"], words: 0 }],
+  ["setsid", { values: [], words: 0 }],
+  ["caffeinate", { values: ["-t", "-w"], words: 0 }],
+]);
+
 // Drops what runs before the program: variable assignments, `env` and its
-// options, and shell keywords.
+// options, shell keywords, and the wrappers above.
 function program(words) {
   let at = 0;
   for (;;) {
     const word = words[at];
     if (word === undefined) return [];
+    const wrapper = WRAPPERS.get(basename(word));
     if (ASSIGNMENT.test(word) || KEYWORDS.has(word)) at++;
     else if (basename(word) === "env") {
       at++;
       while (words[at] !== undefined && (words[at].startsWith("-") || ASSIGNMENT.test(words[at]))) at += words[at] === "-u" || words[at] === "-C" ? 2 : 1;
+    } else if (wrapper) {
+      at++;
+      while (words[at]?.startsWith("-")) {
+        if (words[at++] === "--") break;
+        if (wrapper.values.includes(words[at - 1])) at++;
+      }
+      at += wrapper.words;
     } else return words.slice(at);
   }
 }
 
+// An alias that runs a push: `push`, `push --force`, or `!git push`.
+const PUSH_ALIAS = /^(!\s*git\s+)?push(\s|$)/;
+const PUSH_WORD = /(^|[\s!;&|(])push(\s|$|[;&|)])/;
+
 // The command's hits in order, each with the directory it acts in: `cd x &&`
 // and `git -C x` both move it. `cwd` is where the command runs.
-// A hit is { kind: "push" | "pr-create", dir }.
+// A hit is { kind: "push" | "pr-create", dir }, and a push also carries `args`,
+// the words after `push`.
 export function hitsOf(command, cwd = ".") {
   const hits = [];
   let dir = resolve(cwd);
@@ -115,22 +142,33 @@ export function hitsOf(command, cwd = ".") {
     if (name === "cd" && rest[0] !== undefined && rest[0] !== "-") dir = resolve(dir, rest[0]);
     else if (SHELLS.has(name)) {
       const at = rest.findIndex((word) => /^-[a-z]*c[a-z]*$/.test(word));
-      if (at >= 0 && rest[at + 1] !== undefined) hits.push(...hitsOf(rest[at + 1], dir));
+      const script = rest[at + 1] === "--" ? rest[at + 2] : rest[at + 1];
+      if (at >= 0 && script !== undefined) hits.push(...hitsOf(script, dir));
     } else if (name === "eval") hits.push(...hitsOf(rest.join(" "), dir));
     else if (name === "git") {
       let at = 0;
       let where = dir;
+      const aliases = new Map();
       for (; rest[at]?.startsWith("-"); at++) {
         const option = rest[at];
         if (option === "-C" && rest[at + 1] !== undefined) where = resolve(where, rest[at + 1]);
+        if (option === "-c") {
+          const alias = rest[at + 1]?.match(/^alias\.([^=]+)=([\s\S]*)$/);
+          if (alias) aliases.set(alias[1], alias[2].trim());
+        }
         if (option.startsWith("--work-tree=")) where = resolve(where, option.slice("--work-tree=".length));
         if (GIT_VALUE_OPTIONS.has(option)) at++;
       }
-      if (rest[at] === "push") hits.push({ kind: "push", dir: where });
+      const expanded = aliases.get(rest[at]);
+      if (rest[at] === "push") hits.push({ kind: "push", dir: where, args: rest.slice(at + 1) });
+      else if (expanded !== undefined && (PUSH_ALIAS.test(expanded) || PUSH_WORD.test(expanded))) {
+        const after = expanded.replace(/^[\s\S]*?\bpush\b/, "").split(/\s+/).filter(Boolean);
+        hits.push({ kind: "push", dir: where, args: [...after, ...rest.slice(at + 1)] });
+      }
     } else if (name === "gh") {
       let at = 0;
       for (; rest[at]?.startsWith("-"); at++) if (GH_VALUE_OPTIONS.has(rest[at])) at++;
-      if (rest[at] === "pr" && rest[at + 1] === "create") hits.push({ kind: "pr-create", dir });
+      if (rest[at] === "pr" && ["create", "new"].includes(rest[at + 1])) hits.push({ kind: "pr-create", dir });
     }
   }
   return hits;
