@@ -41,18 +41,43 @@ there are more known escapes than the baseline, when the baseline holds more tha
 when a check in `checks/` is the expected catcher of no mistake. Adding a check is therefore adding
 a mistake it catches. Fixing an escape is lowering the baseline in the same commit.
 
-What the test cannot see is a pull request that raises the baseline. That is a line in a diff a
-reviewer reads. A comparison against the base branch is not built.
+A test inside one commit cannot stop that commit from raising its own baseline. So the same rules
+are also held against the base branch:
+
+```sh
+bun tools/verify.mjs honesty --base origin/main
+```
+
+It runs no verifier. It compares `baseline.json` and the files in `mutants/` with the merge base of
+`HEAD` and the ref, and exits 1 when the known escapes went up, or when a mistake the base catches is
+gone, turned into a known escape, or pointed at another check or assertion. A base with no baseline
+yet passes.
+
+A check that cannot see the evidence it needs, such as a startup hook that never ran, is unobservable,
+and the verifier fails the tree on it. A mistake that names only the check counts that as caught. A
+mistake that names an assertion needs that assertion to fail.
+
+Every assertion of every check is named by at least one mistake. A new assertion comes with the
+mistake that fails it.
 
 ## In CI
 
 There is no `.github/workflows/behavior.yml` on this branch, so no job was added. When it exists,
-the surface job takes one more step after the surface tier:
+the surface job takes these steps after the surface tier. The table goes to the summary whether or
+not honesty passes, and the job still fails when it does not:
 
 ```yaml
 - name: Honesty (planted mistakes against the real CLI)
-  run: bun tools/verify.mjs honesty --out "$RUNNER_TEMP/honesty.md" && cat "$RUNNER_TEMP/honesty.md" >> "$GITHUB_STEP_SUMMARY"
+  run: bun tools/verify.mjs honesty --out "$RUNNER_TEMP/honesty.md"
+- name: Honesty table
+  if: always()
+  run: cat "$RUNNER_TEMP/honesty.md" >> "$GITHUB_STEP_SUMMARY"
+- name: Ratchet against the base
+  if: github.event_name == 'pull_request'
+  run: |
+    git fetch --no-tags origin "$GITHUB_BASE_REF"
+    bun tools/verify.mjs honesty --base "origin/$GITHUB_BASE_REF"
 ```
 
-It makes no model call and needs no secret, only the CLI the surface job already installs. If the
-step must run when the surface step fails, give it `if: always()`.
+The checkout needs `fetch-depth: 0`, so that the merge base is there. Honesty makes no model call and
+needs no secret, only the CLI the surface job already installs.

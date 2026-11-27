@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 
-import { loadMutants, MUTANTS_DIR, plant, PlantDidNotApply, problem } from "../../tools/honesty.mjs";
+import { atHead, atRef, judge, loadMutants, MUTANTS_DIR, plant, PlantDidNotApply, problem, ratchet } from "../../tools/honesty.mjs";
 import { CHECKS_DIR, listDir } from "../../tools/verify/paths.mjs";
 import { cleanup, commitAll, git, productRepo, tempDir } from "./harness.mjs";
 
@@ -46,6 +46,18 @@ describe("the committed planted mistakes", () => {
     expect(escapes.filter((mutant) => checkIds.includes(mutant.known_escape.future_check)).map((mutant) => mutant.id)).toEqual([]);
   });
 
+  // A check that fails an assertion nothing plants a mistake for could be
+  // weakened without the table changing. The doctored-trace tests would
+  // notice; this keeps the planted mistakes from depending on them.
+  test("every assertion of every check is named by at least one", () => {
+    const named = new Set(committed.filter((mutant) => mutant.catches?.assertion).map((mutant) => `${mutant.catches.check}.${mutant.catches.assertion}`));
+    const unnamed = [];
+    for (const { id, file } of listDir(CHECKS_DIR)) {
+      for (const [, assertion] of readFileSync(join(CHECKS_DIR, file), "utf8").matchAll(/\bid: "([a-z0-9-]+)"/g)) if (!named.has(`${id}.${assertion}`)) unnamed.push(`${id}.${assertion}`);
+    }
+    expect(unnamed).toEqual([]);
+  });
+
   // The number of known escapes only goes down. The count is committed, so
   // adding an escape means raising it in a diff a reviewer sees, and fixing
   // one means lowering it in the same commit.
@@ -59,6 +71,9 @@ describe("the committed planted mistakes", () => {
   test("seed the mistakes proven on the core and the escapes found on it", () => {
     const ids = committed.map((mutant) => mutant.id);
     for (const id of ["hook-not-executable", "mandate-deleted", "mandate-emptied", "mandate-names-unloaded-skill", "dependency-restored", "skill-without-description", "stray-commands-directory"]) {
+      expect(committed.find((mutant) => mutant.id === id)?.catches).toBeDefined();
+    }
+    for (const id of ["hooks-json-deleted", "hook-stdout-extra", "hook-stderr-noise", "hook-fails-after-printing", "hook-registered-twice", "hook-registered-by-manifest"]) {
       expect(committed.find((mutant) => mutant.id === id)?.catches).toBeDefined();
     }
     for (const id of ["sessionstart-matcher-narrowed", "marketplace-json-broken", "agents-directory-removed", "skill-unnamed-by-mandate-removed"]) {
@@ -89,6 +104,81 @@ describe("a mutant file is refused unless it is exact", () => {
   test("the exact one passes", () => expect(problem(good, "x.json")).toBeNull());
   test.each(bad)("%s", (wrong, mutant) => {
     expect(problem(mutant, "x.json")).toBe(wrong);
+  });
+});
+
+// The verdict of one mutant from a run's structured result.
+describe("judging a run", () => {
+  const run = (...checks) => ({ checks: checks.map(([id, verdict, extra]) => ({ id, verdict, failed: [], ...extra })) });
+  const catches = (assertion) => ({ id: "m", catches: { check: "S3", ...(assertion ? { assertion } : {}) } });
+  const unseen = ["S3", "unobservable", { reason: "a hook_response named SessionStart:startup is missing" }];
+
+  test("a check that cannot see its evidence has caught a mistake that names no assertion", () => {
+    expect(judge(catches(), run(unseen))).toEqual({ status: "caught", note: "S3 unobservable: a hook_response named SessionStart:startup is missing" });
+  });
+
+  test("and has not caught one that names an assertion, without blaming itself for it", () => {
+    expect(judge(catches("stdout"), run(unseen))).toEqual({ status: "escaped", note: "S3 unobservable" });
+    expect(judge(catches("stdout"), run(unseen, ["S2", "fail", { failed: ["S2.skills"] }]))).toEqual({ status: "escaped", note: "S3 unobservable, other failures: S2" });
+  });
+
+  test("a known escape the verifier fails by unobservable is a blind spot closed", () => {
+    expect(judge({ id: "m", known_escape: { reason: "r", future_check: "S9" } }, run(unseen)).status).toBe("promote");
+  });
+
+  test("a pass is an escape, a failure on the named assertion is a catch", () => {
+    expect(judge(catches(), run(["S3", "pass"])).status).toBe("escaped");
+    expect(judge(catches("stdout"), run(["S3", "fail", { failed: ["S3.stdout"] }])).status).toBe("caught");
+  });
+});
+
+describe("the ratchet against a base", () => {
+  const caught = (id, check = "S3", assertion) => ({ id, description: "d", edits: [{ op: "delete", path: "plugins/pstack/a" }], catches: { check, ...(assertion ? { assertion } : {}) } });
+  const escaping = (id) => ({ id, description: "d", edits: [{ op: "delete", path: "plugins/pstack/a" }], known_escape: { reason: "r", future_check: "S9" } });
+  const state = (...mutants) => {
+    const ids = mutants.filter((mutant) => mutant.known_escape).map((mutant) => mutant.id).sort();
+    return { baseline: { known_escapes: ids.length, ids }, mutants };
+  };
+  const base = state(caught("a", "S3", "stdout"), caught("b"), escaping("e"));
+
+  test("the same files, or fewer escapes, pass", () => {
+    expect(ratchet(base, base)).toEqual([]);
+    expect(ratchet(base, state(caught("a", "S3", "stdout"), caught("b"), caught("e")))).toEqual([]);
+    expect(ratchet(base, state(caught("a", "S3", "stdout"), caught("b")))).toEqual([]);
+    expect(ratchet(null, base)).toEqual([]);
+  });
+
+  test("a new known escape fails, and so does a baseline raised to match", () => {
+    const head = state(caught("a", "S3", "stdout"), caught("b"), escaping("e"), escaping("f"));
+    expect(ratchet(base, head)).toEqual(["baseline.json raises the known escapes from 1 to 2", "2 known escapes where the base has 1"]);
+  });
+
+  test("a catch that is gone, turned into an escape or pointed at another check fails", () => {
+    expect(ratchet(base, state(caught("a", "S3", "stdout"), escaping("e")))).toEqual(["b caught by S3 on the base, and is gone"]);
+    expect(ratchet(base, state(escaping("a"), caught("b"), escaping("e")))).toContain("a caught by S3.stdout on the base, and is now a known escape");
+    expect(ratchet(base, state(caught("a", "S2", "stdout"), caught("b"), escaping("e")))).toEqual(["a expected S3.stdout on the base, and S2.stdout now"]);
+    expect(ratchet(base, state(caught("a", "S3", "stderr"), caught("b"), escaping("e")))).toEqual(["a expected S3.stdout on the base, and S3.stderr now"]);
+  });
+
+  // The same, through git: the base is the committed ref, the head the files.
+  test.skipIf(process.platform === "win32")("reads the base from git and the head from the files", () => {
+    const dir = tempDir();
+    const put = (current) => {
+      rmSync(join(dir, "tools/verify/mutants"), { recursive: true, force: true });
+      mkdirSync(join(dir, "tools/verify/mutants"), { recursive: true });
+      for (const mutant of current.mutants) writeFileSync(join(dir, `tools/verify/mutants/${mutant.id}.json`), JSON.stringify(mutant));
+      writeFileSync(join(dir, "tools/verify/baseline.json"), JSON.stringify(current.baseline));
+    };
+    expect(atRef(dir, "HEAD")).toBeNull();
+    put(base);
+    commitAll(dir, "base");
+    put(state(...base.mutants, escaping("f")));
+    put({ ...atHead(dir), baseline: { known_escapes: 2, ids: ["e", "f"] } });
+    expect(atRef(dir, "HEAD")).toEqual(base);
+    expect(ratchet(atRef(dir, "HEAD"), atHead(dir))).toEqual(["baseline.json raises the known escapes from 1 to 2", "2 known escapes where the base has 1"]);
+    const run = spawnSync(process.execPath, [VERIFY, "honesty", "--tree", dir, "--base", "HEAD"], { encoding: "utf8", env: { ...process.env, PATH } });
+    expect(run.status).toBe(1);
+    expect(run.stdout).toStartWith("ratchet: FAIL\n- baseline.json raises");
   });
 });
 
@@ -197,6 +287,12 @@ describe("bun tools/verify.mjs honesty, against the stand-in", () => {
     git(repo, "commit", "--quiet", "-m", "no mandate");
     const run = honesty(repo, { gone: { edits: [{ op: "write", path: MANDATE, content: "" }], catches: { check: "S3" } } });
     expect(run.head).toStartWith("honesty: FAIL, the untouched tree fails S3");
+    expect(run.status).toBe(1);
+  }, LONG);
+
+  test.skipIf(process.platform === "win32")("a tier with no check is said to hold none, not blamed on the CLI", () => {
+    const run = honesty(productRepo(), { gone: { edits: deleteMandate, catches: { check: "S3" } } }, "--tier", "behavior");
+    expect(run.head).toBe("honesty: FAIL, the verifier ran no check: no check in the behavior tier");
     expect(run.status).toBe(1);
   }, LONG);
 
