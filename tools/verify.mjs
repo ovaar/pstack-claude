@@ -96,7 +96,7 @@ async function verify(options) {
   try {
     const { stage, stageHash, stageSeal } = buildStage(snap, join(dir, "stage"));
     const cli = doctor(sandbox(join(base, "doctor")));
-    const sessions = cli.problem ? [] : plan(selected, base);
+    const sessions = cli.problem ? [] : plan(selected, base, process.env, stage);
     const setup = {
       run,
       round: nextRound(root),
@@ -110,10 +110,10 @@ async function verify(options) {
       selection: { tier: options.tier, flow: options.flow },
       selected: selected.map((flow) => flow.id),
       checks: checks.map(({ id, file, sha256 }) => ({ id, file, sha256 })),
-      sessions: sessions.map(({ id, name, cwd }) => ({ check: id, name, cwd })),
+      sessions: sessions.map(({ id, name, cwd, extras }) => ({ check: id, name, cwd, env: extras.env, files: extras.files })),
     };
     writeFileSync(join(dir, "setup.json"), `${JSON.stringify(setup, null, 2)}\n`);
-    await drive(sessions, { cli: cli.path, plugin: join(stage, PLUGIN), out: join(dir, "traces"), jobs: options.jobs });
+    await drive(sessions, { cli: cli.path, stage, plugin: join(stage, PLUGIN), out: join(dir, "traces"), jobs: options.jobs });
   } catch (err) {
     // A run that stopped before its setup record leaves nothing to check.
     if (!existsSync(join(dir, "setup.json"))) rmSync(dir, { recursive: true, force: true });

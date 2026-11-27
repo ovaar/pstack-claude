@@ -7,12 +7,13 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { accessSync, closeSync, constants, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, realpathSync, rmSync, statSync } from "node:fs";
+import { accessSync, closeSync, constants, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, isAbsolute, join, relative } from "node:path";
 
+import { SKILLS } from "../plugin.mjs";
 import { PRODUCT, WATCHED } from "./paths.mjs";
-import { sha256, stageHash, stageSeal } from "./stage.mjs";
+import { SESSION_FILES, sha256, stageHash, stageSeal } from "./stage.mjs";
 
 const PIN = JSON.parse(readFileSync(new URL("./cli-pin.json", import.meta.url), "utf8"));
 
@@ -89,14 +90,54 @@ export function childEnv(box, env = process.env) {
   return { ...Object.fromEntries(inherited), HOME: box.home, CLAUDE_CONFIG_DIR: box.config };
 }
 
-// One sandbox per run: two runs at once never share a config directory.
-export function plan(flows, base, env = process.env) {
-  return flows.flatMap((flow) =>
-    flow.runs.map((session) => {
-      const box = sandbox(join(base, flow.id, session.name));
-      return { id: flow.id, ...session, cwd: box.cwd, config: box.config, env: childEnv(box, env) };
-    }),
+// The only variables a run may add to its environment are the plugin's own
+// switches. Any other name would let a flow change which sheet or runtime the
+// hook sees, or sign the session in.
+const EXTRA_ENV = /^PSTACK_[A-Z0-9_]+$/;
+
+// The skill directories a stage holds, for a flow whose input is made of them.
+export function skillNames(stage) {
+  const dir = join(stage, SKILLS);
+  return existsSync(dir) ? readdirSync(dir).filter((name) => existsSync(join(dir, name, "SKILL.md"))).sort() : [];
+}
+
+// Files a run needs in its config directory: the sheet of model overrides, and
+// no other name (SESSION_FILES). The path stays inside that directory, and setup records the
+// digest of what it wrote so the checker can tell it was the declared text.
+function placeFiles(box, files = {}) {
+  return Object.fromEntries(
+    Object.entries(files)
+      .sort()
+      .map(([name, text]) => {
+        const path = join(box.config, name);
+        if (isAbsolute(name) || relative(box.config, path).startsWith("..")) throw new Error(`a flow may write only inside the config directory, not ${name}`);
+        if (!SESSION_FILES.includes(name)) throw new Error(`a flow may write only ${SESSION_FILES.join(", ")} in the config directory, not ${name}`);
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, text);
+        return [name, sha256(text)];
+      }),
   );
+}
+
+// One sandbox per run: two runs at once never share a config directory. A run
+// that names `share` takes the sandbox of an earlier run of its flow, which is
+// how a session is resumed: the conversation it continues is in that
+// directory. Runs that share one are started in the order listed.
+export function plan(flows, base, env = process.env, stage = null) {
+  return flows.flatMap((flow) => {
+    const boxes = new Map();
+    return flow.runs.map((session) => {
+      if (session.share && !boxes.has(session.share)) throw new Error(`${flow.id} ${session.name} shares the sandbox of ${session.share}, which no earlier run of the flow has`);
+      const box = boxes.get(session.share) ?? sandbox(join(base, flow.id, session.name));
+      boxes.set(session.name, box);
+      const added = session.env ?? {};
+      const bad = Object.keys(added).find((name) => !EXTRA_ENV.test(name));
+      if (bad) throw new Error(`${flow.id} ${session.name} may not set ${bad}; only PSTACK_ variables`);
+      const stdin = typeof session.stdin === "function" ? session.stdin({ skills: skillNames(stage) }) : (session.stdin ?? "");
+      const files = placeFiles(box, session.files);
+      return { id: flow.id, ...session, stdin, cwd: box.cwd, config: box.config, env: { ...childEnv(box, env), ...added }, extras: { env: added, files } };
+    });
+  });
 }
 
 function executable(path) {

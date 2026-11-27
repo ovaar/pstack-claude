@@ -28,7 +28,7 @@ test("the untouched tree passes, and its row quotes the hook's exit code and the
   const result = await run();
   expect(result.checks.find((each) => each.id === "S3")).toMatchObject({ verdict: "pass", failed: [], observations: [] });
   expect(markdown(result).split("\n").find((line) => line.startsWith("| S3 "))).toBe(
-    `| S3 the mandate arrives at startup | pass | 1 hook_response named SessionStart:startup; SessionStart matcher startup\\|resume\\|clear\\|compact in the stage's hooks.json; exit_code 0; outcome success; stdout sha256 ${MANDATE_SHA256} (983 bytes); 7 pstack: skills named in stdout, each in init.skills; empty stderr; 13 of 13 integrity rules hold |`,
+    `| S3 the mandate arrives at startup | pass | 1 hook_response named SessionStart:startup; SessionStart matcher startup\\|resume\\|clear\\|compact in the stage's hooks.json; exit_code 0; outcome success; stdout sha256 ${MANDATE_SHA256} (983 bytes); 7 pstack: skills named in stdout, each in init.skills; empty stderr; 14 of 14 integrity rules hold |`,
   );
 });
 

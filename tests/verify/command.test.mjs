@@ -68,9 +68,15 @@ test.skipIf(process.platform === "win32")("a full run passes every check, hands 
 
   const traces = tracesOf(dir);
   expect(traces.length).toBeGreaterThanOrEqual(2);
+  // The variables a run's flow declares reach that run and no other, even
+  // with the same name exported by the surrounding job.
+  const sessions = json(join(dir, "setup.json")).sessions;
   for (const trace of traces) {
-    expect(json(`${trace}.transcript.jsonl`)).toEqual({ type: "stand-in", env: SESSION_VARIABLES });
-    expect(json(`${trace}.sidecar.json`)).toMatchObject({ env: SESSION_VARIABLES, exit_code: 0, timed_out: false });
+    const [name, check] = trace.split("/").reverse();
+    const added = Object.keys(sessions.find((session) => session.check === check && session.name === name).env);
+    const env = [...SESSION_VARIABLES, ...added].sort();
+    expect(readFileSync(`${trace}.transcript.jsonl`, "utf8").split("\n").map((line) => (line ? JSON.parse(line) : null))[0]).toEqual({ type: "stand-in", env });
+    expect(json(`${trace}.sidecar.json`)).toMatchObject({ env, exit_code: 0, timed_out: false });
   }
 
   expect(existsSync(join(dir, "stage/VERSION"))).toBe(true);
@@ -216,5 +222,5 @@ test("a wrong argument is a usage error, with nothing run", () => {
   expect(usage(["--jobs", "4"])).toEqual([2, "", first]);
   expect(usage(["--tree"])).toEqual([2, "", first]);
   expect(usage(["check"])).toEqual([2, "", first]);
-  expect(usage(["--flow", "S9"])[2]).toStartWith("no flow S9; flows: S2, S3");
+  expect(usage(["--flow", "S9"])[2]).toMatch(/^no flow S9; flows: .*\bS2\b.*\bS3\b/);
 }, LONG);

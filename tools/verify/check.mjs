@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import { PLUGIN } from "../plugin.mjs";
 import { CHECKS_DIR, loadDir } from "./paths.mjs";
-import { sha256, stageHash, stageSeal } from "./stage.mjs";
+import { SESSION_FILES, sha256, stageHash, stageSeal } from "./stage.mjs";
 import { readRun, runNames } from "./trace.mjs";
 
 const PIN = JSON.parse(readFileSync(new URL("./cli-pin.json", import.meta.url), "utf8"));
@@ -27,6 +27,14 @@ const RERUN = "run the verifier again";
 // purpose: a flag added there alone fails the argv rule. Without --bare or
 // --safe-mode, which skip plugin hooks.
 const sessionArgv = (cli, plugin, args) => [cli, "-p", "--plugin-dir", plugin, "--model", "haiku", "--output-format", "stream-json", "--verbose", ...args];
+// A run may instead be one subcommand of the CLI, which a check declares in
+// full, with the stage's directories named as the driver names them.
+const commandArgv = (cli, command, places) => [cli, ...command.map((word) => places[word] ?? word)];
+// The variables a session has whatever its flow says; a check declares the
+// ones it adds.
+const BASE_ENV = ["PATH", "TMPDIR", "LANG", "HOME", "CLAUDE_CONFIG_DIR"];
+const REQUIRED_ENV = ["HOME", "CLAUDE_CONFIG_DIR"];
+const entries = (map) => JSON.stringify(Object.entries(map ?? {}).sort());
 
 // Thrown when a record a check needs is not in the evidence. The check is
 // then unobservable, which counts as failed: no verdict rests on an absence.
@@ -45,12 +53,16 @@ function readStage(setup) {
     }
   };
   return {
+    root: setup.stage,
     plugin: at(PLUGIN),
     hash: stageHash(setup.stage),
     seal: stageSeal(setup.stage),
     version: read("VERSION")?.toString("utf8").trim() ?? null,
     // All a check file may ask of the stage.
     offered: {
+      // Where the CLI was told to look, as it reports paths back.
+      root: setup.stage,
+      plugin: at(PLUGIN),
       sha256: (path) => {
         const bytes = read(path);
         return bytes && sha256(bytes);
@@ -82,18 +94,53 @@ function integrity(run, check, setup, stage) {
   }
   rule("trace-sha256", run.sha256 === run.recordedSha256, `trace sha256 ${run.sha256}`, `the sha256 in the sidecar, ${run.recordedSha256}`);
 
+  const command = check.commands?.[run.name];
   const declared = check.args?.[run.name];
-  const wanted = declared && sessionArgv(setup.cli.path, stage.plugin, declared);
+  const places = { "<plugin>": stage.plugin, "<stage>": stage.root };
+  const wanted = command ? commandArgv(setup.cli.path, command, places) : declared && sessionArgv(setup.cli.path, stage.plugin, declared);
   rule(
     "argv",
     Boolean(wanted) && JSON.stringify(run.argv) === JSON.stringify(wanted),
     `argv ${JSON.stringify(run.argv)}`,
     wanted ? `exactly ${JSON.stringify(wanted)}` : `a run the check file declares arguments for, and it declares none for ${run.name}`,
   );
+
+  // What a run adds to its sandbox is what its check declares: setup's record
+  // of the variables and of the digests of the files it wrote, and the names
+  // the session's environment held. Without this, a variable a flow forgot
+  // to drop would reach every run that follows it.
+  const planned = (setup.sessions ?? []).find((session) => session.check === check.id && session.name === run.name);
+  const env = check.env?.[run.name] ?? {};
+  const files = Object.fromEntries(Object.entries(check.files?.[run.name] ?? {}).map(([name, text]) => [name, sha256(text)]));
+  const allowed = [...BASE_ENV, ...Object.keys(env)];
+  const stray = (run.env ?? []).filter((name) => !allowed.includes(name));
+  const lacking = [...REQUIRED_ENV, ...Object.keys(env)].filter((name) => !(run.env ?? []).includes(name));
+  const foreign = Object.keys(files).filter((name) => !SESSION_FILES.includes(name));
+  const recorded = Boolean(planned) && entries(planned.env) === entries(env) && entries(planned.files) === entries(files);
+  rule(
+    "extras",
+    recorded && run.env !== null && !stray.length && !lacking.length && !foreign.length,
+    foreign.length ? `the check declares ${foreign.join(", ")}, which no run may write` : !planned ? "no record in setup of this run" : run.env === null ? "no environment in the sidecar" : `setup recorded ${entries(planned.env)} and ${entries(planned.files)}; the session had ${run.env.join(", ")}${stray.length ? `, of which ${stray.join(", ")} are no variable of a session` : ""}`,
+    `exactly the variables ${entries(env)} and the files ${entries(files)} the check declares, on top of ${BASE_ENV.join(", ")}; the only file a run may write is ${SESSION_FILES.join(", ")}`,
+  );
+
+  if (command) {
+    // The subcommand prints one document, and it must be about the directory
+    // it was given: a validator pointed at some other tree says nothing of
+    // this one.
+    const document = run.trace.document();
+    rule("document", document !== null, document ? "one JSON document" : "no JSON document", "one JSON document");
+    const given = command.filter((word) => places[word]).map((word) => places[word]);
+    if (document) {
+      const inside = given.length === 1 && typeof document.target === "string" && document.target.startsWith(`${given[0]}/.claude-plugin/`);
+      rule("target", inside, `target ${document.target}`, `a manifest under ${given[0]}/.claude-plugin/`);
+    }
+    return rules;
+  }
+
   rule("init-present", init !== null, init ? "an init event" : "no init event", "an init event");
   rule("result-present", results.length > 0, results.length ? "a result event" : "no result event", "a result event");
 
-  const planned = (setup.sessions ?? []).find((session) => session.check === check.id && session.name === run.name);
   if (init) rule("cwd", Boolean(planned) && init.cwd === planned.cwd, `cwd ${init.cwd}`, planned ? `the working directory setup made for this run, ${planned.cwd}` : `a run setup planned, and it planned none named ${run.name}`);
 
   const mine = init?.plugins.filter((plugin) => plugin.name === "pstack") ?? [];
@@ -117,14 +164,18 @@ function integrity(run, check, setup, stage) {
 // Defects worth a line even when the check passed, and what a reader needs
 // to tell a failed plugin from a session that never ran. They change no
 // verdict.
-function observations(run) {
+function observations(run, check) {
   const seen = [];
   if (run.ended.spawnError) seen.push(`the CLI did not start: ${run.ended.spawnError}`);
   if (run.ended.timedOut) seen.push("the driver stopped the session at its time limit");
   if (run.ended.stderr) seen.push(`the session wrote to stderr: ${run.ended.stderr}`);
   const hooks = run.trace.hooks();
   const starts = hooks.filter((hook) => hook.event === "SessionStart");
-  if (starts.length > 1) seen.push(`${starts.length} SessionStart hook responses in one session`);
+  // One per source: a session that is cleared starts again, with its own.
+  for (const name of new Set(starts.map((hook) => hook.name))) {
+    const same = starts.filter((hook) => hook.name === name).length;
+    if (same > 1) seen.push(`${same} ${name} hook responses in one session`);
+  }
   for (const hook of hooks) {
     if (hook.stderr) seen.push(`hook ${hook.name} wrote to stderr: ${hook.stderr.trim().split("\n")[0]}`);
   }
@@ -138,7 +189,7 @@ function observations(run) {
     if (init.mcpServers.length) seen.push(`MCP servers in init: ${init.mcpServers.join(", ")}`);
     if (init.cliVersion !== PIN.verified) seen.push(`CLI ${init.cliVersion}; the checks were verified on ${PIN.verified}`);
   }
-  if (run.trace.malformed) seen.push(`${run.trace.malformed} stream lines are not JSON`);
+  if (run.trace.malformed && !check.commands?.[run.name]) seen.push(`${run.trace.malformed} stream lines are not JSON`);
   return seen.map((text) => ({ run: run.name, text }));
 }
 
@@ -180,7 +231,7 @@ function judge(id, check, setup, stage, dir) {
     failed,
     integrity: rules,
     assertions,
-    observations: runs.flatMap(observations),
+    observations: runs.flatMap((run) => observations(run, check)),
     cost_usd: runs.reduce((sum, run) => sum + (run.trace.result()?.costUsd ?? 0), 0),
   };
 }

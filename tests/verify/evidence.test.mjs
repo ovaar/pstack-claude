@@ -32,8 +32,8 @@ test("evidence.md opens with the verdict line, then what was judged, a row per c
     "",
   ]);
   expect(lines.filter((line) => line.startsWith("| E"))).toEqual([
-    "| E1 the session reports its plugins | pass | 5 plugins in init; 13 of 13 integrity rules hold |",
-    "| E2 the session ran a hook | pass | exit_code 0; 13 of 13 integrity rules hold |",
+    "| E1 the session reports its plugins | pass | 5 plugins in init; 14 of 14 integrity rules hold |",
+    "| E2 the session ran a hook | pass | exit_code 0; 14 of 14 integrity rules hold |",
   ]);
   expect(lines.slice(lines.indexOf("## Observations"))).toEqual(["## Observations", "", "None.", ""]);
 });

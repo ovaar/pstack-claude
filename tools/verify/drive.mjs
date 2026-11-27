@@ -13,6 +13,20 @@ import { join } from "node:path";
 // do not show the surface a user meets.
 const baseArgs = (plugin) => ["-p", "--plugin-dir", plugin, "--model", "haiku", "--output-format", "stream-json", "--verbose"];
 
+// A flow may start one subcommand of the CLI in place of a session, and only a
+// read-only one that calls no model: the plugin validator. The checker holds
+// its own copy of the argument list a flow's run must have, so a command added
+// here alone fails its argv rule.
+const COMMANDS = [["plugin", "validate"]];
+const PLACES = (plugin, stage) => ({ "<plugin>": plugin, "<stage>": stage });
+
+function argvOf(run, { cli, plugin, stage }) {
+  if (!run.command) return [cli, ...baseArgs(plugin), ...(run.args ?? [])];
+  if (!COMMANDS.some((allowed) => allowed.every((word, at) => run.command[at] === word))) throw new Error(`the driver starts no subcommand like ${JSON.stringify(run.command)}`);
+  const places = PLACES(plugin, stage);
+  return [cli, ...run.command.map((word) => places[word] ?? word)];
+}
+
 // A fresh config directory holds only this run's sessions, so every
 // transcript in it belongs to the run.
 function transcripts(config) {
@@ -28,8 +42,8 @@ function transcripts(config) {
     );
 }
 
-async function session(run, { cli, plugin, out }) {
-  const argv = [cli, ...baseArgs(plugin), ...(run.args ?? [])];
+async function session(run, { cli, plugin, stage, out }) {
+  const argv = argvOf(run, { cli, plugin, stage });
   const started = Date.now();
   const child = spawn(cli, argv.slice(1), { cwd: run.cwd, env: run.env });
   const stdout = [];
@@ -72,10 +86,16 @@ async function session(run, { cli, plugin, out }) {
   writeFileSync(file(".sidecar.json"), `${JSON.stringify(sidecar, null, 2)}\n`);
 }
 
-export async function drive(runs, { cli, plugin, out, jobs = 2 }) {
-  const queue = [...runs];
+// Runs that share a config directory go one after the other, in the order
+// listed: a resumed session needs the conversation the run before it left.
+export async function drive(runs, { cli, stage, plugin, out, jobs = 2 }) {
+  const groups = new Map();
+  for (const run of runs) groups.set(run.config, [...(groups.get(run.config) ?? []), run]);
+  const queue = [...groups.values()];
   const worker = async () => {
-    for (let run = queue.shift(); run; run = queue.shift()) await session(run, { cli, plugin, out });
+    for (let group = queue.shift(); group; group = queue.shift()) {
+      for (const run of group) await session(run, { cli, plugin, stage, out });
+    }
   };
   await Promise.all(Array.from({ length: jobs }, worker));
 }

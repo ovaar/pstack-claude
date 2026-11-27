@@ -1,0 +1,138 @@
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:architect</command-message>\n<command-name>/pstack:architect</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/architect"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:arena</command-message>\n<command-name>/pstack:arena</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/arena"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:automate-me</command-message>\n<command-name>/pstack:automate-me</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/automate-me"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:babysit</command-message>\n<command-name>/pstack:babysit</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/babysit"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:benchmark-checklist</command-message>\n<command-name>/pstack:benchmark-checklist</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/benchmark-checklist"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:blast-radius</command-message>\n<command-name>/pstack:blast-radius</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/blast-radius"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:bro</command-message>\n<command-name>/pstack:bro</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/bro"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:correct</command-message>\n<command-name>/pstack:correct</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/correct"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:create-formal-verification-skill</command-message>\n<command-name>/pstack:create-formal-verification-skill</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/create-formal-verification-skill"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:create-verification-skill</command-message>\n<command-name>/pstack:create-verification-skill</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/create-verification-skill"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:deslop</command-message>\n<command-name>/pstack:deslop</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/deslop"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:figure-it-out</command-message>\n<command-name>/pstack:figure-it-out</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/figure-it-out"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:fix-ci</command-message>\n<command-name>/pstack:fix-ci</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/fix-ci"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:fix-merge-conflicts</command-message>\n<command-name>/pstack:fix-merge-conflicts</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/fix-merge-conflicts"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:get-pr-comments</command-message>\n<command-name>/pstack:get-pr-comments</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/get-pr-comments"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:how</command-message>\n<command-name>/pstack:how</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/how"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:in-your-own-words</command-message>\n<command-name>/pstack:in-your-own-words</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/in-your-own-words"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:interrogate</command-message>\n<command-name>/pstack:interrogate</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/interrogate"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:ketchup</command-message>\n<command-name>/pstack:ketchup</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/ketchup"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:ketchup-video</command-message>\n<command-name>/pstack:ketchup-video</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/ketchup-video"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:maintain-formal-verification-skill</command-message>\n<command-name>/pstack:maintain-formal-verification-skill</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/maintain-formal-verification-skill"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:maintain-verification-skill</command-message>\n<command-name>/pstack:maintain-verification-skill</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/maintain-verification-skill"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:make-pr-easy-to-review</command-message>\n<command-name>/pstack:make-pr-easy-to-review</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/make-pr-easy-to-review"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:no-comments</command-message>\n<command-name>/pstack:no-comments</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/no-comments"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:poteto-help</command-message>\n<command-name>/pstack:poteto-help</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/poteto-help"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:poteto-mode</command-message>\n<command-name>/pstack:poteto-mode</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/poteto-mode"}]}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-attack-the-premise"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-boundary-discipline"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-build-the-lever"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-encode-lessons-in-structure"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-exhaust-the-design-space"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-experience-first"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-explain-the-number"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-fix-root-causes"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-foundational-thinking"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-guard-the-context-window"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-laziness-protocol"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-make-operations-idempotent"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-migrate-callers-then-delete-legacy-apis"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-minimize-reader-load"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-model-the-domain"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-never-block-on-the-human"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-outcome-oriented-execution"}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:principle-prove-it-works</command-message>\n<command-name>/pstack:principle-prove-it-works</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/principle-prove-it-works"}]}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-redesign-from-first-principles"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-separate-before-serializing-shared-state"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-sequence-verifiable-units"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-subtract-before-you-add"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-test-behavior-not-implementation"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"/pstack:principle-type-system-discipline"}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:recall</command-message>\n<command-name>/pstack:recall</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/recall"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:reflect</command-message>\n<command-name>/pstack:reflect</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/reflect"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:reframe</command-message>\n<command-name>/pstack:reframe</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/reframe"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:setup-pstack</command-message>\n<command-name>/pstack:setup-pstack</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/setup-pstack"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:sharpen</command-message>\n<command-name>/pstack:sharpen</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/sharpen"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:show-me-your-work</command-message>\n<command-name>/pstack:show-me-your-work</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/show-me-your-work"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:statechart</command-message>\n<command-name>/pstack:statechart</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/statechart"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:swarm</command-message>\n<command-name>/pstack:swarm</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/swarm"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:tdd</command-message>\n<command-name>/pstack:tdd</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/tdd"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:teach</command-message>\n<command-name>/pstack:teach</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/teach"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:technical-writing</command-message>\n<command-name>/pstack:technical-writing</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/technical-writing"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:thermo-nuclear-code-quality-review</command-message>\n<command-name>/pstack:thermo-nuclear-code-quality-review</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/thermo-nuclear-code-quality-review"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:thermo-nuclear-review</command-message>\n<command-name>/pstack:thermo-nuclear-review</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/thermo-nuclear-review"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:thermos</command-message>\n<command-name>/pstack:thermos</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/thermos"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:typescript-best-practices</command-message>\n<command-name>/pstack:typescript-best-practices</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/typescript-best-practices"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:unslop</command-message>\n<command-name>/pstack:unslop</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/unslop"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:what-did-i-get-done</command-message>\n<command-name>/pstack:what-did-i-get-done</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/what-did-i-get-done"}]}}
+{"type":"user","message":{"role":"user","content":"<command-message>pstack:why</command-message>\n<command-name>/pstack:why</command-name>"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: <STAGE>/plugins/pstack/skills/why"}]}}
+{"type":"user","message":{"role":"user","content":"/pstack:does-not-exist"}}
+{"type":"attachment","attachment":{"type":"unknown_command_fallback"}}
