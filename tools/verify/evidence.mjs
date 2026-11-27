@@ -10,7 +10,9 @@ import { join } from "node:path";
 const HOME_PATH = /(?:\/Users|\/home)\/[^/\s"'`\\]+|[A-Za-z]:\\+Users\\+[^\\\s"'`]+/g;
 // A home path as the CLI writes it into the name of a project directory.
 const HOME_SLUG = /-(?:Users|home)-[A-Za-z0-9_]+/g;
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
+// Tried only where a local part can begin. Tried at every character, a long
+// run with no @ in it costs the square of its length: seconds for 64 KB.
+const EMAIL = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
 // Shaped by prefix, so a sha256 digest, which the evidence quotes, is kept.
 const TOKEN = /\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})/g;
 
