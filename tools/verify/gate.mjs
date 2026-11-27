@@ -168,7 +168,8 @@ export function hitsOf(command, cwd = ".") {
     } else if (name === "gh") {
       let at = 0;
       for (; rest[at]?.startsWith("-"); at++) if (GH_VALUE_OPTIONS.has(rest[at])) at++;
-      if (rest[at] === "pr" && ["create", "new"].includes(rest[at + 1])) hits.push({ kind: "pr-create", dir });
+      const rehearsal = rest.some((word) => ["--dry-run", "--help", "-h"].includes(word));
+      if (rest[at] === "pr" && ["create", "new"].includes(rest[at + 1]) && !rehearsal) hits.push({ kind: "pr-create", dir });
     }
   }
   return hits;
@@ -303,26 +304,52 @@ function againstBase(dir, sha) {
   return null;
 }
 
+const readJson = (file) => {
+  try {
+    return JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+};
+
 // Runs the verifier on a clean checkout of `sha`, so what is judged is the
 // commit and not whatever the working tree holds. Evidence goes to the git
 // directory of the repository pushed from, so failed rounds add up there.
+//
+// A round is a failed run on a commit that changed since the last failed one:
+// the verifier counts every failed run, so a retry of the very same commit is
+// given back its round, and the line says so. Nothing was edited, so nothing
+// was attempted.
 export function verifyCommit(dir, sha, env = process.env) {
-  const evidence = gitOut(dir, ["rev-parse", "--absolute-git-dir"]);
+  const evidence = join(gitOut(dir, ["rev-parse", "--absolute-git-dir"]), "pstack-verify");
+  const [rounds, last] = [join(evidence, "rounds.json"), join(evidence, "gate-last.json")];
+  const retry = readJson(last)?.sha === sha;
+  const before = retry && existsSync(rounds) ? readFileSync(rounds, "utf8") : null;
   const scratch = mkdtempSync(join(tmpdir(), "pstack-gate-"));
   const tree = join(scratch, "tree");
   try {
     const added = git(dir, ["worktree", "add", "--detach", "--quiet", tree, sha]);
     if (added.status !== 0) return `FAIL could not check out ${sha}: ${added.stderr.trim()}`;
-    const run = spawnSync(process.execPath, [VERIFY, "--tier", "surface", "--tree", tree, "--evidence", join(evidence, "pstack-verify")], {
+    const run = spawnSync(process.execPath, [VERIFY, "--tier", "surface", "--tree", tree, "--evidence", evidence], {
       encoding: "utf8",
       env: gitEnv(env),
       timeout: VERIFIER_TIMEOUT_MS,
       maxBuffer: 1 << 28,
     });
     if (run.error) return `FAIL the verifier did not run: ${run.error.message}`;
-    const first = run.stdout.split("\n")[0];
+    let first = run.stdout.split("\n")[0];
     // A crash prints on stderr and nothing on stdout.
-    return first || `FAIL the verifier printed no verdict: ${run.stderr.trim().split("\n")[0]}`;
+    if (!first) return `FAIL the verifier printed no verdict: ${run.stderr.trim().split("\n")[0]}`;
+    if (first.startsWith("FAIL ")) {
+      if (retry) {
+        if (before === null) rmSync(rounds, { force: true });
+        else writeFileSync(rounds, before);
+        first = first.replace(/\| round (\d+)$/, (_, n) => `| round ${Math.max(1, Number(n) - 1)}`);
+      }
+      mkdirSync(evidence, { recursive: true });
+      writeFileSync(last, JSON.stringify({ sha }));
+    } else rmSync(last, { force: true });
+    return first;
   } finally {
     git(dir, ["worktree", "remove", "--force", tree]);
     rmSync(scratch, { recursive: true, force: true });

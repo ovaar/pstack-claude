@@ -96,6 +96,9 @@ const TABLE = [
   ["gi''t push", [PUSH]],
   ["g\\it push", [PUSH]],
   // Not a push: the words are data, the subcommand differs, or the program does.
+  ["gh pr create --dry-run", []],
+  ["gh pr create --help", []],
+  ["gh pr new -h", []],
   ["git -c alias.p=status p", []],
   ["sudo ls", []],
   ["timeout 600 ls", []],
@@ -361,16 +364,29 @@ test.skipIf(process.platform === "win32")("a receipt is not read: a PASS receipt
   expect(hook("git push", { cwd: repo }).status).toBe(2);
 }, LONG);
 
-test.skipIf(process.platform === "win32")("three failed rounds end in a stop message that tells the agent to report", () => {
+test.skipIf(process.platform === "win32")("three failed rounds, each on a commit changed since the last, end in a stop message that tells the agent to report", () => {
   const { repo } = pushable();
   // A VERSION the recorded traces do not agree with fails a check.
-  commit(repo, "VERSION", "9.9.9\n");
-  const messages = [1, 2, 3].map(() => hook("git push", { cwd: repo }));
+  const messages = [1, 2, 3].map((round) => {
+    commit(repo, "VERSION", `9.9.${round}\n`);
+    return hook("git push", { cwd: repo });
+  });
   expect(messages.map((m) => m.status)).toEqual([2, 2, 2]);
   expect(messages[0].stderr).toMatch(/round 1 of 3/);
   expect(messages[1].stderr).toMatch(/round 2 of 3/);
   expect(messages[2].stderr).toMatch(/STOP\. Do not edit further and do not push\. Report to the human/);
 }, 3 * LONG);
+
+test.skipIf(process.platform === "win32")("pushing the same failing commit again is not another round, and a changed one is", () => {
+  const { repo } = pushable();
+  commit(repo, "VERSION", "9.9.1\n");
+  const rounds = [1, 2, 3, 4].map(() => hook("git push", { cwd: repo }));
+  expect(rounds.map((m) => m.status)).toEqual([2, 2, 2, 2]);
+  for (const blocked of rounds) expect(blocked.stderr).toMatch(/round 1 of 3/);
+  commit(repo, "VERSION", "9.9.2\n");
+  expect(hook("git push", { cwd: repo }).stderr).toMatch(/round 2 of 3/);
+  expect(hook("git push", { cwd: repo }).stderr).toMatch(/round 2 of 3/);
+}, 8 * LONG);
 
 const prePush = (repo, sha, from, { env = {}, remote = "origin" } = {}) => {
   const result = spawnSync(process.execPath, [GATE, "pre-push"], {
