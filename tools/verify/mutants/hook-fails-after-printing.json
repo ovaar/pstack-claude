@@ -1,0 +1,16 @@
+{
+  "id": "hook-fails-after-printing",
+  "description": "The hook prints the mandate and then exits 1: the mandate arrives, and the hook still reports failure.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "cat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\"",
+      "with": "cat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\"\nexit 1"
+    }
+  ],
+  "catches": {
+    "check": "S3",
+    "assertion": "outcome"
+  }
+}

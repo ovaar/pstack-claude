@@ -1,0 +1,6 @@
+{
+  "id": "hook-not-executable",
+  "description": "The SessionStart script loses its executable bit, so the hook exits 126 and no mandate arrives (the class of d523013).",
+  "edits": [{ "op": "chmod", "path": "plugins/pstack/hooks/session-start.sh", "mode": "644" }],
+  "catches": { "check": "S3", "assertion": "exit-code" }
+}

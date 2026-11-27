@@ -1,0 +1,9 @@
+{
+  "id": "skill-unnamed-by-mandate-removed",
+  "description": "A whole skill directory the mandate does not name is deleted. The tree and the session still agree with each other, so S2 passes.",
+  "edits": [{ "op": "delete", "path": "plugins/pstack/skills/bro" }],
+  "known_escape": {
+    "reason": "S2 compares the session with the tree under test and S3 only follows the mandate. Nothing compares the skills the tree ships with the set the release lists.",
+    "future_check": "S1"
+  }
+}

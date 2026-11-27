@@ -1,0 +1,6 @@
+{
+  "id": "mandate-deleted",
+  "description": "The mandate file the hook prints is deleted, so the hook exits 1 (eb15d76).",
+  "edits": [{ "op": "delete", "path": "plugins/pstack/hooks/session-start-context.md" }],
+  "catches": { "check": "S3", "assertion": "exit-code" }
+}
