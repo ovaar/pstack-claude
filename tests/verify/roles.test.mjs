@@ -67,7 +67,7 @@ test("only setup and the driver can start a process", () => {
 
 test("the push gate starts the verifier only, and no role module imports it", () => {
   expect(everyModule).toContain(GATE);
-  expect(imports(read(GATE)).filter((specifier) => specifier.startsWith(".") && !["../plugin.mjs", "./paths.mjs", "./setup.mjs"].includes(specifier))).toEqual([]);
+  expect(imports(read(GATE)).filter((specifier) => specifier.startsWith(".") && !["../plugin.mjs", "./paths.mjs", "./setup.mjs", "./verdict.mjs"].includes(specifier))).toEqual([]);
   expect(modules.filter((file) => imports(read(file)).some((specifier) => specifier.endsWith("gate.mjs")))).toEqual([]);
 });
 

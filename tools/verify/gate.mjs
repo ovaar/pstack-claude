@@ -32,6 +32,7 @@ import { fileURLToPath } from "node:url";
 import { isMain, PLUGIN } from "../plugin.mjs";
 import { WATCHED } from "./paths.mjs";
 import { gitEnv } from "./setup.mjs";
+import { judgeLine as judgeVerdict } from "./verdict.mjs";
 
 const VERIFY = fileURLToPath(new URL("../verify.mjs", import.meta.url));
 export const BYPASS_LINE = "verify gate bypassed by PSTACK_VERIFY_GATE=off";
@@ -222,21 +223,13 @@ export function pushPlan(args) {
 // --- What the verdict says ----------------------------------------------
 
 // The first line of a verifier run, which the gate asks to be limited to the
-// surface tier. A PASS that ran every surface check is a pass:
-// `PASS surface 2/2 | ...`. Once a behavior check exists, the same run says
-// `PARTIAL surface 2/2 | behavior NOT RUN | ...`, because that check was left
-// out, and it is a pass too when nothing but unselected tiers are missing.
-// STAND-IN, SKIPPED, FAIL and a failing or missing surface check are not, and
-// neither is a RECHECK of someone else's run.
-export function judgeLine(line = "") {
-  const word = line.match(/^(\S+)/)?.[1] ?? null;
-  const round = line.match(/\| round (\d+)$/)?.[1];
-  const [, passed, of] = line.match(/^\S+ surface (\d+)\/(\d+)\b/) ?? [];
-  const others = line.split(" | ").slice(1).filter((part) => !part.startsWith("round "));
-  const surfaceDone = Number(of) > 0 && passed === of;
-  const ok = surfaceDone && (word === "PASS" || (word === "PARTIAL" && others.every((part) => part.endsWith(" NOT RUN"))));
-  return { word, ok, round: round ? Number(round) : null };
-}
+// surface tier, is read by verdict.mjs, the same reader the CI jobs run. A
+// PASS that ran every surface check is a pass. A run of the surface tier
+// alone says `PARTIAL surface 7/7 | behavior NOT RUN | round 1` once a
+// behavior check exists, and that is a pass too: every surface check passed
+// and the other tiers were only left out. STAND-IN, SKIPPED, FAIL, a failing
+// or missing surface check, and a RECHECK of someone else's run are not.
+export const judgeLine = (line) => judgeVerdict(line, "surface");
 
 const HUMAN_BYPASS = "Only the human sets PSTACK_VERIFY_GATE=off, in the environment the session started in. Do not set it.";
 
