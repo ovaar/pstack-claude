@@ -1,6 +1,6 @@
 # Keeping the verifier honest
 
-A check that passes on a broken plugin is worse than no check. `bun tools/verify.mjs honesty`
+Read [verifier.md](verifier.md) first. A check that passes on a broken plugin is worse than no check. `bun tools/verify.mjs honesty`
 plants known mistakes in a throwaway copy of the tree, runs the real verifier on the copy with
 `--tree`, and reports for each mistake whether the check that should catch it did.
 
@@ -20,7 +20,7 @@ One JSON file per mistake in `tools/verify/mutants/`. The file name is the id.
 | --- | --- |
 | `description` | what is broken, and the commit it re-creates when there is one |
 | `edits` | the edit as data: `replace` (path, find, with), `write` (path, content), `delete` (path), `chmod` (path, mode) |
-| `catches` | `{ check, assertion? }`: the check that must fail, and the assertion that must be among its failures |
+| `catches` | `{ check, assertion? }`: the surface check that must fail, and the assertion that must be among its failures |
 | `known_escape` | `{ reason, future_check }` in place of `catches`: no check catches it yet |
 
 Only product paths can be edited. The run is judged from the verifier's structured result, never
@@ -38,7 +38,7 @@ from prose.
 
 `tools/verify/baseline.json` holds the known escapes. `tests/verify/honesty.test.mjs` fails when
 there are more known escapes than the baseline, when the baseline holds more than there are, and
-when a check in `checks/` is the expected catcher of no mistake. Adding a check is therefore adding
+when a surface check is the expected catcher of no mistake. Adding a check is therefore adding
 a mistake it catches. Fixing an escape is lowering the baseline in the same commit.
 
 A test inside one commit cannot stop that commit from raising its own baseline. So the same rules
@@ -57,27 +57,33 @@ A check that cannot see the evidence it needs, such as a startup hook that never
 and the verifier fails the tree on it. A mistake that names only the check counts that as caught. A
 mistake that names an assertion needs that assertion to fail.
 
-Every assertion of every check is named by at least one mistake. A new assertion comes with the
-mistake that fails it.
+Every assertion of every surface check is named by at least one mistake. The test reads the
+assertions each check returns on its untouched recordings, so an id built from a run's name, such as
+S4's `clear-stderr`, counts. A new assertion comes with the mistake that fails it. An assertion no
+plant can reach on the pinned CLI goes in `TRACE_ONLY` in `tests/verify/honesty.test.mjs` with the
+reason and a doctored recording that turns it. Two do today: `S1.valid`, because a manifest the
+validator fails lists nothing the plugin provides and S1 is unobservable first, and `S6.answered`,
+because the messages typed follow from the tree.
+
+## The model tier
+
+Honesty plants mistakes for the surface tier only. `--tier behavior` and `--tier all` are refused,
+and so is a mistake that names a behavior check: each would drive a model and judge a sample. The
+model tier's proof is its recordings. Every assertion of B1 to B5 has an entry in `TRACE_ONLY`, a
+doctored copy of the untouched recording that must turn that assertion, and the test fails when an
+assertion has none. The tests in `tests/verify/checks/B*.test.mjs` doctor more facts, listed in
+[verify-behavior-tier.md](verify-behavior-tier.md#honesty).
+
+## The table today
+
+On CLI 2.1.332: `honesty: OK, 53 of 53 caught, 0 known escapes, 0 failing`. The five escapes found
+on the core (matcher narrowed to startup, marketplace.json broken, agents directory removed, an
+unnamed skill removed, a command shadowing a skill) are caught by S4, S10, S1, S1 and S6, and
+`baseline.json` is 0.
 
 ## In CI
 
-There is no `.github/workflows/behavior.yml` on this branch, so no job was added. When it exists,
-the surface job takes these steps after the surface tier. The table goes to the summary whether or
-not honesty passes, and the job still fails when it does not:
-
-```yaml
-- name: Honesty (planted mistakes against the real CLI)
-  run: bun tools/verify.mjs honesty --out "$RUNNER_TEMP/honesty.md"
-- name: Honesty table
-  if: always()
-  run: cat "$RUNNER_TEMP/honesty.md" >> "$GITHUB_STEP_SUMMARY"
-- name: Ratchet against the base
-  if: github.event_name == 'pull_request'
-  run: |
-    git fetch --no-tags origin "$GITHUB_BASE_REF"
-    bun tools/verify.mjs honesty --base "origin/$GITHUB_BASE_REF"
-```
-
-The checkout needs `fetch-depth: 0`, so that the merge base is there. Honesty makes no model call and
-needs no secret, only the CLI the surface job already installs.
+The `Verifier honesty (no model calls)` job in `.github/workflows/behavior.yml` runs
+`bun tools/verify.mjs honesty` against the pinned CLI, then `honesty --base` against the pull
+request's base branch (a push compares with the commit it replaced). The table goes to the job
+summary in a step that always runs. It needs no secret.
