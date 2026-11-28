@@ -1,0 +1,16 @@
+{
+  "id": "session-hook-any-value-off",
+  "description": "Any value of PSTACK_SESSION_HOOK turns the mandate off, so PSTACK_SESSION_HOOK=on silences it too (278d485).",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "[ \"${PSTACK_SESSION_HOOK:-}\" = off ]",
+      "with": "[ -n \"${PSTACK_SESSION_HOOK:-}\" ]"
+    }
+  ],
+  "catches": {
+    "check": "S5",
+    "assertion": "env-on-mandate"
+  }
+}

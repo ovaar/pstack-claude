@@ -1,0 +1,16 @@
+{
+  "id": "marketplace-without-owner",
+  "description": "marketplace.json loses its owner, which the validator requires, so `/plugin marketplace add` refuses it.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": ".claude-plugin/marketplace.json",
+      "find": "  \"owner\": {\n    \"name\": \"Michael Denyer\",\n    \"url\": \"https://github.com/michael-denyer\"\n  },\n",
+      "with": ""
+    }
+  ],
+  "catches": {
+    "check": "S10",
+    "assertion": "valid"
+  }
+}

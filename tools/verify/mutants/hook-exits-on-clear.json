@@ -1,0 +1,16 @@
+{
+  "id": "hook-exits-on-clear",
+  "description": "The hook exits 3 before it prints when the source is clear: startup still gets the mandate, a clear session gets none.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "cat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\"",
+      "with": "case $(cat) in *'\"source\"'*'\"clear\"'*) exit 3 ;; esac\ncat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\""
+    }
+  ],
+  "catches": {
+    "check": "S4",
+    "assertion": "clear-exit-code"
+  }
+}

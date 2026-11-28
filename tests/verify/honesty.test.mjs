@@ -9,8 +9,10 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, write
 import { delimiter, dirname, join } from "node:path";
 
 import { atHead, atRef, judge, loadMutants, MUTANTS_DIR, plant, PlantDidNotApply, problem, ratchet } from "../../tools/honesty.mjs";
-import { CHECKS_DIR, listDir } from "../../tools/verify/paths.mjs";
-import { cleanup, commitAll, git, productRepo, tempDir } from "./harness.mjs";
+import { check } from "../../tools/verify/check.mjs";
+import { CHECKS_DIR, FLOWS_DIR, listDir, loadDir } from "../../tools/verify/paths.mjs";
+import { firstCall, hookResponse, lastResult, recall, saidSo } from "./doctor.mjs";
+import { cleanup, commitAll, evidence, git, productRepo, shipped, tempDir } from "./harness.mjs";
 
 let tmp;
 beforeEach(() => {
@@ -28,6 +30,53 @@ const MANDATE = "plugins/pstack/hooks/session-start-context.md";
 const committed = loadMutants();
 const checkIds = listDir(CHECKS_DIR).map((entry) => entry.id);
 const escapes = committed.filter((mutant) => mutant.known_escape);
+const flows = await loadDir(FLOWS_DIR);
+const surfaceIds = flows.filter((flow) => flow.tier === "surface").map((flow) => flow.id);
+const behaviorIds = flows.filter((flow) => flow.tier === "behavior").map((flow) => flow.id);
+// Each check's assertions as it returns them on its untouched recordings.
+const assertionIds = {};
+for (const id of checkIds) {
+  const row = (await check(evidence(await shipped(id)), CHECKS_DIR)).checks.find((each) => each.id === id);
+  assertionIds[id] = row.assertions.filter((each) => !each.attempt).map((each) => each.id);
+}
+cleanup();
+
+const ATTEMPTS = ["attempt-1", "attempt-2", "attempt-3"];
+const every = (id, events) => Object.fromEntries(ATTEMPTS.map((name) => [`${id}.${name}`, { events }]));
+const noMandate = (id) => ({ [`${id}.attempt-1`]: { events: (events) => void Object.assign(hookResponse(events), { exit_code: 126 }) } });
+const stoppedEarly = (id) => ({ [`${id}.attempt-3`]: { events: (events) => void (lastResult(events).subtype = "error_max_budget_usd") } });
+const skillCalled = (skill) => (events) => recall(events, (block) => (block.name === "Skill" ? (block.input.skill = skill) : null));
+const routes = (events) => firstCall(events, "Skill", { skill: "pstack:poteto-mode", args: "x" });
+
+// The assertions no planted mistake reaches, each with the doctored
+// recording that turns it. A surface entry says why no plant reaches it on
+// the pinned CLI; a behavior entry needs no reason, since the model tier has
+// no planted mistakes at all.
+const TRACE_ONLY = {
+  "S1.valid": {
+    why: "on 2.1.332 a manifest the validator fails lists nothing the plugin provides, so S1 is unobservable first; manifest-hooks-path-missing is caught that way",
+    edits: { S1: { events: ([report]) => void Object.assign(report, { success: false, manifest: { ...report.manifest, errors: [{ path: "hooks", message: "bad hook" }] } }) } },
+  },
+  "S6.answered": {
+    why: "the number of results follows from the messages typed, which the flow takes from the tree, so no tree changes it without another assertion failing first",
+    edits: { S6: { events: (events) => void events.splice(events.findLastIndex((event) => event.type === "result"), 1) } },
+  },
+  "B1.mandate-arrived": { edits: noMandate("B1") },
+  "B1.ended-normally": { edits: stoppedEarly("B1") },
+  "B1.pass-rule": { edits: every("B1", skillCalled("pstack:why")) },
+  "B2.mandate-arrived": { edits: noMandate("B2") },
+  "B2.ended-normally": { edits: stoppedEarly("B2") },
+  "B2.pass-rule": { edits: every("B2", routes) },
+  "B3.mandate-arrived": { edits: noMandate("B3") },
+  "B3.ended-normally": { edits: stoppedEarly("B3") },
+  "B3.pass-rule": { edits: every("B3", skillCalled("pstack:how")) },
+  "B4.command-resolved": { edits: { B4: { events: (events) => void (events.find((event) => event.isReplay).message.content = "/pstack:does-not-exist") } } },
+  "B4.ended-normally": { edits: stoppedEarly("B4") },
+  "B4.pass-rule": { edits: every("B4", (events) => saidSo(events, "Here is how it works.")) },
+  "B5.hook-off": { edits: { "B5.attempt-2": { events: (events) => void Object.assign(hookResponse(events), { stdout: "<EXTREMELY_IMPORTANT>You have pstack.</EXTREMELY_IMPORTANT>" }) } } },
+  "B5.ended-normally": { edits: stoppedEarly("B5") },
+  "B5.pass-rule": { edits: every("B5", routes) },
+};
 
 describe("the committed planted mistakes", () => {
   test("hold the shape the command reads", () => {
@@ -35,9 +84,10 @@ describe("the committed planted mistakes", () => {
     expect(readdirSync(MUTANTS_DIR).filter((file) => !file.endsWith(".json"))).toEqual([]);
   });
 
-  test("every check in checks/ is the expected catcher of at least one", () => {
+  test("every surface check is the expected catcher of at least one, and no behavior check is", () => {
     const caught = new Set(committed.filter((mutant) => mutant.catches).map((mutant) => mutant.catches.check));
-    expect(checkIds.filter((id) => !caught.has(id))).toEqual([]);
+    expect(surfaceIds.filter((id) => !caught.has(id))).toEqual([]);
+    expect(committed.filter((mutant) => behaviorIds.includes(mutant.catches?.check)).map((mutant) => mutant.id)).toEqual([]);
   });
 
   test("name only checks that exist as catchers, and checks that do not exist yet as future catchers", () => {
@@ -47,15 +97,32 @@ describe("the committed planted mistakes", () => {
   });
 
   // A check that fails an assertion nothing plants a mistake for could be
-  // weakened without the table changing. The doctored-trace tests would
-  // notice; this keeps the planted mistakes from depending on them.
-  test("every assertion of every check is named by at least one", () => {
+  // weakened without the table changing. The assertions are the ones each
+  // check returns on its untouched recordings, so an id built from a run's
+  // name counts too. An attempt of a sampled check is evidence for its pass
+  // rule and decides nothing, so it is left out.
+  test("every assertion of every surface check is named by one, or proved by a doctored recording for the reason given", () => {
     const named = new Set(committed.filter((mutant) => mutant.catches?.assertion).map((mutant) => `${mutant.catches.check}.${mutant.catches.assertion}`));
-    const unnamed = [];
-    for (const { id, file } of listDir(CHECKS_DIR)) {
-      for (const [, assertion] of readFileSync(join(CHECKS_DIR, file), "utf8").matchAll(/\bid: "([a-z0-9-]+)"/g)) if (!named.has(`${id}.${assertion}`)) unnamed.push(`${id}.${assertion}`);
-    }
-    expect(unnamed).toEqual([]);
+    const surface = Object.entries(assertionIds).filter(([id]) => surfaceIds.includes(id)).flatMap(([id, ids]) => ids.map((each) => `${id}.${each}`));
+    expect(surface.filter((each) => !named.has(each) && !TRACE_ONLY[each])).toEqual([]);
+    // An assertion a planted mistake now reaches leaves the list.
+    expect(Object.keys(TRACE_ONLY).filter((each) => named.has(each))).toEqual([]);
+    for (const each of Object.keys(TRACE_ONLY).filter((key) => surfaceIds.includes(key.split(".")[0]))) expect(TRACE_ONLY[each].why).toBeString();
+  });
+
+  // The model tier has no planted mistakes: honesty would drive a model for
+  // each one and judge a sample. Its proof is these doctored recordings, one
+  // per assertion, each turning the assertion it names.
+  test("every assertion of every behavior check is proved by a doctored recording, not by a planted mistake", () => {
+    const behavior = Object.entries(assertionIds).filter(([id]) => behaviorIds.includes(id)).flatMap(([id, ids]) => ids.map((each) => `${id}.${each}`));
+    expect(behavior.length).toBeGreaterThan(0);
+    expect(behavior.filter((each) => !TRACE_ONLY[each])).toEqual([]);
+  });
+
+  test.each(Object.keys(TRACE_ONLY))("the doctored recording for %s turns it", async (each) => {
+    const [id] = each.split(".");
+    const judged = (await check(evidence(await shipped(id), TRACE_ONLY[each].edits), CHECKS_DIR)).checks.find((row) => row.id === id);
+    expect(judged.failed).toContain(each);
   });
 
   // The number of known escapes only goes down. The count is committed, so
@@ -76,9 +143,11 @@ describe("the committed planted mistakes", () => {
     for (const id of ["hooks-json-deleted", "hook-stdout-extra", "hook-stderr-noise", "hook-fails-after-printing", "hook-registered-twice", "hook-registered-by-manifest"]) {
       expect(committed.find((mutant) => mutant.id === id)?.catches).toBeDefined();
     }
-    for (const id of ["sessionstart-matcher-narrowed", "marketplace-json-broken", "agents-directory-removed", "skill-unnamed-by-mandate-removed"]) {
+    // The escapes found on the core, each caught now by the check it waited for.
+    const closed = { "sessionstart-matcher-narrowed": "S4", "marketplace-json-broken": "S10", "agents-directory-removed": "S1", "skill-unnamed-by-mandate-removed": "S1", "command-shadows-skill": "S6" };
+    for (const [id, catcher] of Object.entries(closed)) {
       expect(ids).toContain(id);
-      expect(escapes.map((mutant) => mutant.id)).toContain(id);
+      expect(committed.find((mutant) => mutant.id === id)?.catches?.check).toBe(catcher);
     }
   });
 });
@@ -109,7 +178,7 @@ describe("a mutant file is refused unless it is exact", () => {
 
 // The verdict of one mutant from a run's structured result.
 describe("judging a run", () => {
-  const run = (...checks) => ({ checks: checks.map(([id, verdict, extra]) => ({ id, verdict, failed: [], ...extra })) });
+  const run = (...checks) => ({ checks: checks.map(([id, verdict, extra]) => ({ id, verdict, tier: "surface", failed: [], ...extra })) });
   const catches = (assertion) => ({ id: "m", catches: { check: "S3", ...(assertion ? { assertion } : {}) } });
   const unseen = ["S3", "unobservable", { reason: "a hook_response named SessionStart:startup is missing" }];
 
@@ -124,6 +193,10 @@ describe("judging a run", () => {
 
   test("a known escape the verifier fails by unobservable is a blind spot closed", () => {
     expect(judge({ id: "m", known_escape: { reason: "r", future_check: "S9" } }, run(unseen)).status).toBe("promote");
+  });
+
+  test("a behavior check is no catcher, whatever its verdict", () => {
+    expect(judge({ id: "m", catches: { check: "B1" } }, run(["B1", "fail", { tier: "behavior", failed: ["B1.pass-rule"] }]))).toEqual({ status: "error", note: "B1 is a behavior check: honesty plants mistakes for the surface tier only" });
   });
 
   test("a pass is an escape, a failure on the named assertion is a catch", () => {
@@ -286,13 +359,23 @@ describe("bun tools/verify.mjs honesty, against the stand-in", () => {
     git(repo, "add", "-A");
     git(repo, "commit", "--quiet", "-m", "no mandate");
     const run = honesty(repo, { gone: { edits: [{ op: "write", path: MANDATE, content: "" }], catches: { check: "S3" } } });
-    expect(run.head).toStartWith("honesty: FAIL, the untouched tree fails S3");
+    // S1 finds the mandate's names gone, S4 and S5 its bytes on the other sources.
+    expect(run.head).toBe("honesty: FAIL, the untouched tree fails S1, S3, S4, S5");
     expect(run.status).toBe(1);
   }, LONG);
 
-  test.skipIf(process.platform === "win32")("a tier with no check is said to hold none, not blamed on the CLI", () => {
-    const run = honesty(productRepo(), { gone: { edits: deleteMandate, catches: { check: "S3" } } }, "--tier", "behavior");
-    expect(run.head).toBe("honesty: FAIL, the verifier ran no check: no check in the behavior tier");
+  // Planting for the model tier would spend model calls on every mistake and
+  // judge a sample; its proof is the doctored recordings above.
+  test.each(["behavior", "all"])("--tier %s is refused and points at the model tier's proof", (tier) => {
+    const run = honesty(productRepo(), { gone: { edits: deleteMandate, catches: { check: "S3" } } }, "--tier", tier);
+    expect(run.stdout).toBe("");
+    expect(run.stderr).toContain("honesty plants mistakes for the surface tier only. The model tier is proved by doctored recordings");
+    expect(run.status).toBe(1);
+  });
+
+  test.skipIf(process.platform === "win32")("a mistake that names a behavior check runs no model: the check is not in the tier honesty drives", () => {
+    const run = honesty(productRepo(), { routed: { edits: deleteMandate, catches: { check: "B1" } } });
+    expect(run.rows.routed).toEqual(["ERROR", "B1 is a behavior check: honesty plants mistakes for the surface tier only"]);
     expect(run.status).toBe(1);
   }, LONG);
 

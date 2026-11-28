@@ -1,0 +1,16 @@
+{
+  "id": "session-hook-on-warns",
+  "description": "The hook writes a warning to stderr when PSTACK_SESSION_HOOK=on, which a user who set it sees at every start.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "if [ \"${PSTACK_SESSION_HOOK:-}\" = off ]",
+      "with": "[ \"${PSTACK_SESSION_HOOK:-}\" != on ] || echo \"PSTACK_SESSION_HOOK=on is the default\" >&2\nif [ \"${PSTACK_SESSION_HOOK:-}\" = off ]"
+    }
+  ],
+  "catches": {
+    "check": "S5",
+    "assertion": "env-on-ran"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "id": "manifest-hooks-path-missing",
+  "description": "plugin.json names a hooks file that is not there. The validator fails the manifest and lists nothing the plugin provides, so S1 cannot see its evidence and fails the tree as unobservable.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/.claude-plugin/plugin.json",
+      "find": "  \"license\": \"MIT\",\n",
+      "with": "  \"license\": \"MIT\",\n  \"hooks\": \"./hooks/extra-hooks.json\",\n"
+    }
+  ],
+  "catches": {
+    "check": "S1"
+  }
+}

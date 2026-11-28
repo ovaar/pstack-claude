@@ -1,0 +1,16 @@
+{
+  "id": "principle-leaf-hidden-twice",
+  "description": "A principle-* leaf says user-invocable twice, false then true: a reader of the first line takes it as hidden, the loader takes the last.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/skills/principle-fix-root-causes/SKILL.md",
+      "find": "user-invocable: false\n",
+      "with": "user-invocable: false\nuser-invocable: true\n"
+    }
+  ],
+  "catches": {
+    "check": "S6",
+    "assertion": "refused"
+  }
+}

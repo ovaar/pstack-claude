@@ -1,0 +1,16 @@
+{
+  "id": "session-hook-switch-unguarded",
+  "description": "The switch is read without a default under set -u, so the hook dies with an error in every session that did not set PSTACK_SESSION_HOOK (the class of c02fd49).",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "\"${PSTACK_SESSION_HOOK:-}\" = off",
+      "with": "\"${PSTACK_SESSION_HOOK}\" = off"
+    }
+  ],
+  "catches": {
+    "check": "S5",
+    "assertion": "control-ran"
+  }
+}

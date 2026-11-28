@@ -1,0 +1,16 @@
+{
+  "id": "public-skill-hidden",
+  "description": "A public skill gains user-invocable: false, so /pstack:bro is refused although the slash-command table lists it.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/skills/bro/SKILL.md",
+      "find": "name: bro\n",
+      "with": "name: bro\nuser-invocable: false\n"
+    }
+  ],
+  "catches": {
+    "check": "S6",
+    "assertion": "only-leaves-hidden"
+  }
+}

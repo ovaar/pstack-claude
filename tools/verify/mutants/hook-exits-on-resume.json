@@ -1,0 +1,16 @@
+{
+  "id": "hook-exits-on-resume",
+  "description": "The hook exits 3 before it prints when the source is resume: startup still gets the mandate, a resume session gets none.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "cat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\"",
+      "with": "case $(cat) in *'\"source\"'*'\"resume\"'*) exit 3 ;; esac\ncat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\""
+    }
+  ],
+  "catches": {
+    "check": "S4",
+    "assertion": "resume-exit-code"
+  }
+}

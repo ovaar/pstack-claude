@@ -1,0 +1,16 @@
+{
+  "id": "hook-event-misspelled",
+  "description": "hooks.json registers its hook under SessionStrat, an event the loader does not know, so the loader drops the hook the tree holds and no mandate arrives at any start.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/hooks.json",
+      "find": "\"SessionStart\"",
+      "with": "\"SessionStrat\""
+    }
+  ],
+  "catches": {
+    "check": "S1",
+    "assertion": "hooks"
+  }
+}

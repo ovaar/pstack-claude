@@ -1,0 +1,16 @@
+{
+  "id": "session-hook-sheet-moved",
+  "description": "The hook looks for the sheet under another name, so `session hook: off` in pstack-models.md no longer turns the mandate off.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "sheet=\"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/pstack-models.md\"",
+      "with": "sheet=\"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/pstack/models.md\""
+    }
+  ],
+  "catches": {
+    "check": "S5",
+    "assertion": "sheet-off-silent"
+  }
+}

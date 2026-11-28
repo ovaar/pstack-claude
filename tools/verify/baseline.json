@@ -1,10 +1,4 @@
 {
-  "known_escapes": 5,
-  "ids": [
-    "agents-directory-removed",
-    "command-shadows-skill",
-    "marketplace-json-broken",
-    "sessionstart-matcher-narrowed",
-    "skill-unnamed-by-mandate-removed"
-  ]
+  "known_escapes": 0,
+  "ids": []
 }

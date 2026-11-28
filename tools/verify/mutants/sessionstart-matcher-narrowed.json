@@ -1,9 +1,16 @@
 {
   "id": "sessionstart-matcher-narrowed",
   "description": "The SessionStart matcher keeps startup and drops resume, clear and compact: a resumed or cleared session gets no mandate (af7aa63). S3 only drives startup.",
-  "edits": [{ "op": "replace", "path": "plugins/pstack/hooks/hooks.json", "find": "startup|resume|clear|compact", "with": "startup" }],
-  "known_escape": {
-    "reason": "S3 drives one startup session and asks only that the matcher covers startup. Nothing drives --resume or /clear.",
-    "future_check": "S4"
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/hooks.json",
+      "find": "startup|resume|clear|compact",
+      "with": "startup"
+    }
+  ],
+  "catches": {
+    "check": "S4",
+    "assertion": "registered"
   }
 }

@@ -1,9 +1,15 @@
 {
   "id": "marketplace-json-broken",
   "description": "marketplace.json is not JSON, so `claude plugin marketplace add` fails for every user who installs from the marketplace.",
-  "edits": [{ "op": "write", "path": ".claude-plugin/marketplace.json", "content": "{ \"name\": \"pstack-claude\",\n" }],
-  "known_escape": {
-    "reason": "Every surface check loads the plugin with --plugin-dir, which never reads marketplace.json.",
-    "future_check": "S10"
+  "edits": [
+    {
+      "op": "write",
+      "path": ".claude-plugin/marketplace.json",
+      "content": "{ \"name\": \"pstack-claude\",\n"
+    }
+  ],
+  "catches": {
+    "check": "S10",
+    "assertion": "parses"
   }
 }

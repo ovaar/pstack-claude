@@ -3,7 +3,7 @@
 // tree, runs the real verifier on the copy with --tree, and reports for each
 // mistake whether the check that should catch it did.
 //
-//   bun tools/verify.mjs honesty [--tree <checkout>] [--mutants <dir>] [--mutant <id>] [--tier surface|behavior|all] [--out <file>] [--keep] [--base <ref>]
+//   bun tools/verify.mjs honesty [--tree <checkout>] [--mutants <dir>] [--mutant <id>] [--tier surface] [--out <file>] [--keep] [--base <ref>]
 //
 // With --base <ref> it runs no verifier and compares the committed mistakes and
 // baseline.json with the merge base of HEAD and <ref>; see ratchet.
@@ -14,8 +14,8 @@
 //   description  what is broken and which regression it re-creates
 //   edits        the edit as data: replace (path, find, with), write (path,
 //                content), delete (path) or chmod (path, mode)
-//   catches      { check, assertion? }: the check that must fail, and
-//                optionally the assertion that must be among its failures
+//   catches      { check, assertion? }: the surface check that must fail,
+//                and optionally the assertion that must be among its failures
 //   known_escape { reason, future_check } in place of catches: a mistake no
 //                check catches yet. It is reported and does not fail the run,
 //                but a check that starts catching it does, until the file is
@@ -38,7 +38,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "..");
 export const MUTANTS_DIR = join(here, "verify", "mutants");
 const VERIFY = join(here, "verify.mjs");
-const USAGE = "usage: bun tools/verify.mjs honesty [--tree <checkout>] [--mutants <dir>] [--mutant <id>] [--tier surface|behavior|all] [--out <file>] [--keep] [--base <ref>]";
+const USAGE = "usage: bun tools/verify.mjs honesty [--tree <checkout>] [--mutants <dir>] [--mutant <id>] [--tier surface] [--out <file>] [--keep] [--base <ref>]";
+// A planted mistake is judged by driving the real CLI, which for the model
+// tier would spend model calls on every run and judge a sample. The model
+// tier's proof is its doctored recordings instead: tests/verify/honesty.test.mjs
+// turns every assertion of every behavior check with one.
+const MODEL_TIER = "honesty plants mistakes for the surface tier only. The model tier is proved by doctored recordings: bun test tests/verify/honesty.test.mjs";
 const OPS = { replace: ["path", "find", "with"], write: ["path", "content"], delete: ["path"], chmod: ["path", "mode"] };
 
 export class PlantDidNotApply extends Error {}
@@ -169,6 +174,7 @@ export function judge(mutant, run) {
     return hit.length ? { status: "promote", note: `${hit.join(", ")} now fails: blind spot closed, move the file to catches` } : { status: "known-escape", note: `no check fails; ${mutant.known_escape.future_check} is to catch it` };
   }
   if (!row) return { status: "error", note: `the verifier did not run check ${check}` };
+  if (row.tier !== "surface") return { status: "error", note: `${check} is a ${row.tier} check: honesty plants mistakes for the surface tier only` };
   // A check that cannot see the evidence it needs fails the tree in the
   // verifier's own verdict, as a failed assertion does. That is a catch of a
   // mistake that stops the evidence from arising, such as a deleted hooks
@@ -215,7 +221,7 @@ export function honesty({ tree = repo, mutants, tier = "surface", only = null, k
       // A caught mutant is driven through its check alone. A known escape is
       // driven through everything, since any check may be the one that
       // starts to catch it.
-      const run = verify(dir, { tier: mutant.catches ? "all" : tier, flow: mutant.catches?.check, root: join(scratch, `${mutant.id}-evidence`), env });
+      const run = verify(dir, { tier, flow: mutant.catches?.check, root: join(scratch, `${mutant.id}-evidence`), env });
       rows.push({ id: mutant.id, ...judge(mutant, run), expect: expectation(mutant) });
     }
     return { rows, control: { ok: true, note: control.verdict }, verdict: control.verdict, scratch: keep ? scratch : null, exit: rows.some((row) => FAILS.includes(row.status)) ? 1 : 0 };
@@ -298,7 +304,8 @@ export function parse(args) {
     else if (args[i].startsWith("--") && Object.hasOwn(options, name) && name !== "keep" && args[i + 1] !== undefined) options[name] = args[++i];
     else throw new Error(USAGE);
   }
-  if (!["surface", "behavior", "all"].includes(options.tier)) throw new Error(USAGE);
+  if (["behavior", "all"].includes(options.tier)) throw new Error(MODEL_TIER);
+  if (options.tier !== "surface") throw new Error(USAGE);
   return options;
 }
 

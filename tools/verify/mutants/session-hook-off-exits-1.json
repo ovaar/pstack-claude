@@ -1,0 +1,16 @@
+{
+  "id": "session-hook-off-exits-1",
+  "description": "The hook exits 1 when it is switched off, so a user who turned it off gets a hook error at every start.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "[ \"$runtime\" != agy ] || printf '{}\\n'\n  exit 0",
+      "with": "[ \"$runtime\" != agy ] || printf '{}\\n'\n  exit 1"
+    }
+  ],
+  "catches": {
+    "check": "S5",
+    "assertion": "env-off-ran"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "hook-stderr-noise-on-resume",
+  "description": "The hook writes a warning to stderr when the source is resume, which a user sees on every resume.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "cat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\"",
+      "with": "case $(cat) in *'\"source\"'*'\"resume\"'*) echo noise >&2 ;; esac\ncat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\""
+    }
+  ],
+  "catches": {
+    "check": "S4",
+    "assertion": "resume-stderr"
+  }
+}
