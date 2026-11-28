@@ -98,6 +98,12 @@ describe("the repository's map", () => {
     expect(mapProblems(map, productFiles(), ids)).toEqual([]);
   });
 
+  test("names every check the verifier has, so a check cannot run without saying what it covers", () => {
+    const map = JSON.parse(readFileSync(MAP, "utf8"));
+    const ids = listDir(CHECKS_DIR).map((check) => check.id);
+    expect(ids.filter((id) => !map.covered.some((entry) => entry.checks.includes(id)))).toEqual([]);
+  });
+
   test("a new file in a folder the map lists by name is unmapped", () => {
     const map = JSON.parse(readFileSync(MAP, "utf8"));
     const ids = listDir(CHECKS_DIR).map((check) => check.id);
