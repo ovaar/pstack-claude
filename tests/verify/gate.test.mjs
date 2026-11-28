@@ -222,11 +222,22 @@ test.each([
   ["SKIPPED surface: claude is not on PATH | behavior NOT BUILT | round 1", /did not run.*install Claude Code/s],
   ["PARTIAL surface 1/2 | behavior NOT BUILT | round 1", /did not pass/],
   ["", /did not pass/],
-])("anything but a PASS blocks and names the fix: %j", async (line, message) => {
+])("a line the surface reader refuses blocks and names the fix: %j", async (line, message) => {
   const verdict = await run({ line });
   expect(verdict.allow).toBe(false);
   expect(verdict.message).toMatch(message);
   expect(verdict.message).toContain("Do not set it");
+});
+
+// A surface run prints PARTIAL once a behavior check exists, and the gate
+// accepts that line, so a refusal that sends the agent after PASS sends it
+// after a line a surface run never prints.
+test("the refusal asks for the line the gate accepts, not for a PASS a surface run never prints", async () => {
+  const accepted = "PARTIAL surface 7/7 | behavior NOT RUN | round 1";
+  expect((await run({ line: accepted })).allow).toBe(true);
+  const { message } = await run({ line: "FAIL surface 6/7 | behavior NOT RUN | round 1" });
+  expect(message).not.toMatch(/until it prints PASS/);
+  expect(message).toContain("PARTIAL with surface n/n and every other tier NOT RUN or NOT BUILT");
 });
 
 test("the third failed round, or a BLOCKED verdict, tells the agent to stop and report", async () => {

@@ -241,7 +241,7 @@ export function blockMessage({ line, word, round, sha }) {
   if (word === "DIRTY") return `verify gate: the verifier's own files have uncommitted changes (${line.slice("DIRTY ".length)}), so an edit nobody pushed would decide the verdict on ${sha?.slice(0, 12)}. Commit or discard them, then push again. ${HUMAN_BYPASS}`;
   if (word === "SKIPPED") return `verify gate: the verifier did not run${at}: ${line}. Fix: install Claude Code so \`claude\` is on PATH, then run \`bun tools/verify.mjs --tier surface\`. ${HUMAN_BYPASS}`;
   if (word === "STAND-IN") return `verify gate: the verifier ran against a stand-in CLI${at}, which proves nothing about the claude a user has. Fix: unset PSTACK_VERIFY_CLAUDE and run \`bun tools/verify.mjs --tier surface\`. ${HUMAN_BYPASS}`;
-  return `verify gate: the verifier did not pass${at}${round ? ` (round ${round} of ${MAX_ROUNDS})` : ""}. Fix what it names, commit, run \`bun tools/verify.mjs --tier surface\` until it prints PASS, then push again. ${HUMAN_BYPASS}\nverifier said: ${line ?? "no verdict line"}`;
+  return `verify gate: the verifier did not pass${at}${round ? ` (round ${round} of ${MAX_ROUNDS})` : ""}. Fix what it names, commit, run \`bun tools/verify.mjs --tier surface\` until its first line is one the gate accepts (PASS, or PARTIAL with surface n/n and every other tier NOT RUN or NOT BUILT), then push again. ${HUMAN_BYPASS}\nverifier said: ${line ?? "no verdict line"}`;
 }
 
 // Every verdict of the gate. `hits` are the pushes or pull requests asked
