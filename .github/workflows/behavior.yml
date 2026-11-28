@@ -4,12 +4,16 @@ on:
   pull_request:
   push:
     branches: [main]
+  # The model tier, nightly on main. The other jobs run too, at no cost.
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: behavior-${{ github.ref }}
+  group: behavior-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -49,14 +53,13 @@ jobs:
           echo "$actual"
       # No model call and no secret: the surface tier starts the CLI to read
       # its startup events and never sends a prompt. The verifier prints its
-      # verdict first. SKIPPED, STAND-IN and FAIL are failures here (the
-      # first two exit 0 from the verifier, and each means a check did not
-      # judge the CLI a user has). PSTACK_VERIFY_REQUIRE_CLI turns a missing
-      # CLI into FAIL. --tier surface leaves later tiers out, so once a
-      # behavior check exists the verifier prints PARTIAL for them. That
-      # passes only when every surface check passed and each other tier is
-      # NOT RUN or NOT BUILT; a PARTIAL with a surface check missing fails.
-      # Evidence goes outside the checkout.
+      # verdict first, and tools/verify/verdict.mjs reads it as the push gate
+      # does: PASS, or PARTIAL with every surface check passed and the other
+      # tiers NOT RUN or NOT BUILT. A surface-only run prints PARTIAL once a
+      # behavior check exists, and that is expected. SKIPPED, STAND-IN and
+      # FAIL fail here (the first two exit 0 from the verifier).
+      # PSTACK_VERIFY_REQUIRE_CLI turns a missing CLI into FAIL. Evidence
+      # goes outside the checkout.
       - name: Verify the plugin loads and starts in Claude Code
         env:
           PSTACK_VERIFY_REQUIRE_CLI: "1"
@@ -69,17 +72,7 @@ jobs:
             exit "$status"
           fi
           first=$(head -n 1 "$RUNNER_TEMP/verdict.txt")
-          ok=0
-          if [[ $first == PASS\ * ]]; then
-            ok=1
-          elif [[ $first =~ ^PARTIAL\ surface\ ([1-9][0-9]*)/([0-9]+)\ \|\ (.*)\ \|\ round\ [0-9]+$ ]] && [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[2]}" ]; then
-            ok=1
-            IFS='|' read -ra others <<< "${BASH_REMATCH[3]}"
-            for other in "${others[@]}"; do
-              [[ $other =~ ^\ ?[a-z]+\ NOT\ (RUN|BUILT)\ ?$ ]] || ok=0
-            done
-          fi
-          if [ "$ok" -ne 1 ]; then
+          if ! printf '%s\n' "$first" | bun tools/verify/verdict.mjs surface; then
             echo "::error title=Surface checks not PASS::$first"
             exit 1
           fi
@@ -99,3 +92,204 @@ jobs:
           if-no-files-found: warn
           include-hidden-files: true
           retention-days: 14
+
+  honesty:
+    name: Verifier honesty (no model calls)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # The whole history, so the ratchet can find the merge base with the
+      # pull request's base branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.4"
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Install the Claude Code CLI at the pinned version
+        run: | # zizmor: ignore[adhoc-packages]
+          set -eo pipefail
+          version=$(jq -er .verified tools/verify/cli-pin.json)
+          if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "tools/verify/cli-pin.json verified is not a version: $version"
+            exit 1
+          fi
+          npm install -g "@anthropic-ai/claude-code@$version"
+          actual=$(claude --version)
+          if [ "$actual" != "$version (Claude Code)" ]; then
+            echo "::error title=Wrong Claude Code on PATH::claude on PATH is $actual, the pin is $version"
+            exit 1
+          fi
+          echo "$actual"
+      # Plants every mistake under tools/verify/mutants in a scratch copy and
+      # runs the real surface tier on each. Exit 1 when a mistake escapes, a
+      # known escape is caught (promote it), or a plant does not apply.
+      - name: Plant known mistakes and check each is caught
+        run: |
+          set -eo pipefail
+          bun tools/verify.mjs honesty --out "$RUNNER_TEMP/honesty.md"
+      # The known escapes may only go down, and a mistake the base catches
+      # stays caught by the same check. A push compares with the commit it
+      # replaced; a scheduled or manual run has nothing to compare with.
+      - name: Hold the planted mistakes to the base
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -eo pipefail
+          case $EVENT in
+            pull_request) base="origin/$BASE_REF" ;;
+            push) base=$BEFORE ;;
+            *)
+              echo "ratchet: NOT RUN, a $EVENT run has no base to compare with" | tee "$RUNNER_TEMP/ratchet.txt"
+              exit 0
+              ;;
+          esac
+          status=0
+          bun tools/verify.mjs honesty --base "$base" > "$RUNNER_TEMP/ratchet.txt" || status=$?
+          cat "$RUNNER_TEMP/ratchet.txt"
+          exit "$status"
+      - name: Show the honesty table in the job summary
+        if: ${{ always() }}
+        run: |
+          for report in "$RUNNER_TEMP/honesty.md" "$RUNNER_TEMP/ratchet.txt"; do
+            [ -f "$report" ] && { cat "$report"; echo; } >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit 0
+
+  # The model tier, on haiku, from a credential in the claude-behavior
+  # environment. The fork holds no secret, so without one this job says it
+  # skipped, in a notice and in the summary, and passes: a skipped model
+  # tier is never a PASS of it. A pull request from a fork gets no secret,
+  # so it runs behavior-fork below instead.
+  behavior:
+    name: Claude Code behavior (haiku)
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: claude-behavior
+    steps:
+      # Says whether a credential is there without printing it.
+      - name: Look for a credential
+        id: credential
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "A credential is set in the claude-behavior environment."
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Behavior checks SKIPPED::no CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY in the claude-behavior environment, so B1 to B5 did not run"
+            echo "behavior tier: SKIPPED, no CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY in the claude-behavior environment. B1 to B5 did not run; this is not a pass." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ steps.credential.outputs.present == 'true' }}
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: ${{ steps.credential.outputs.present == 'true' }}
+        with:
+          bun-version: "1.4.4"
+      - name: Install dependencies
+        if: ${{ steps.credential.outputs.present == 'true' }}
+        run: bun install --frozen-lockfile
+      - name: Install the Claude Code CLI at the pinned version
+        if: ${{ steps.credential.outputs.present == 'true' }}
+        run: | # zizmor: ignore[adhoc-packages]
+          set -eo pipefail
+          version=$(jq -er .verified tools/verify/cli-pin.json)
+          if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "tools/verify/cli-pin.json verified is not a version: $version"
+            exit 1
+          fi
+          npm install -g "@anthropic-ai/claude-code@$version"
+          actual=$(claude --version)
+          if [ "$actual" != "$version (Claude Code)" ]; then
+            echo "::error title=Wrong Claude Code on PATH::claude on PATH is $actual, the pin is $version"
+            exit 1
+          fi
+          echo "$actual"
+      # Every tier, with the model tier required: a credential the API
+      # refuses, or a model tier that did not run, is FAIL. Only PASS with
+      # every tier n/n passes. The credential is in this step's environment
+      # and the next one's alone; the verifier hands it to the sessions by
+      # name, with a throwaway home and config directory.
+      - name: Verify the plugin with a model in the loop
+        if: ${{ steps.credential.outputs.present == 'true' }}
+        env:
+          PSTACK_VERIFY_REQUIRE_CLI: "1"
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -eo pipefail
+          status=0
+          bun tools/verify.mjs --tier all --require-behavior --evidence "$RUNNER_TEMP/verify" > "$RUNNER_TEMP/verdict.txt" || status=$?
+          cat "$RUNNER_TEMP/verdict.txt"
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          first=$(head -n 1 "$RUNNER_TEMP/verdict.txt")
+          if ! printf '%s\n' "$first" | bun tools/verify/verdict.mjs all; then
+            echo "::error title=Behavior checks not PASS::$first"
+            exit 1
+          fi
+      # The evidence is traces, setup's record and the stage. Setup records
+      # credentials by name only, but a trace is what the CLI wrote, so the
+      # directory is searched for each credential's value before anything
+      # leaves the runner. A hit deletes the evidence and fails the job. The
+      # values reach grep through a file descriptor, never its command line.
+      - name: Make sure the evidence holds no credential
+        id: clean
+        if: ${{ !cancelled() && steps.credential.outputs.present == 'true' }}
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -o pipefail
+          [ -d "$RUNNER_TEMP/verify" ] || exit 0
+          for name in CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY; do
+            value=${!name:-}
+            [ -n "$value" ] || continue
+            if grep -rqF -f <(printf '%s\n' "$value") "$RUNNER_TEMP/verify"; then
+              rm -rf "$RUNNER_TEMP/verify"
+              echo "::error title=Evidence held a credential::the evidence held the value of $name, so it was deleted and not uploaded"
+              exit 1
+            fi
+          done
+          echo "clean=true" >> "$GITHUB_OUTPUT"
+      - name: Show the evidence in the job summary
+        if: ${{ !cancelled() && steps.clean.outputs.clean == 'true' }}
+        run: |
+          for report in "$RUNNER_TEMP"/verify/runs/*/evidence.md; do
+            [ -f "$report" ] && cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit 0
+      - name: Upload the evidence
+        if: ${{ !cancelled() && steps.clean.outputs.clean == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: claude-behavior-evidence
+          path: ${{ runner.temp }}/verify
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 14
+
+  # A pull request from a fork gets no secret, by GitHub's rule and by the
+  # condition on the job above. It still says, visibly, that the model tier
+  # did not run.
+  behavior-fork:
+    name: Claude Code behavior (haiku, skipped for a fork)
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Say the model tier did not run
+        run: |
+          echo "::notice title=Behavior checks SKIPPED::a pull request from a fork gets no credential, so B1 to B5 did not run"
+          echo "behavior tier: SKIPPED, a pull request from a fork gets no credential. B1 to B5 did not run; this is not a pass." >> "$GITHUB_STEP_SUMMARY"
