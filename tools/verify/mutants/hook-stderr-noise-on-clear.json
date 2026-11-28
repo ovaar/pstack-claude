@@ -1,0 +1,16 @@
+{
+  "id": "hook-stderr-noise-on-clear",
+  "description": "The hook writes a warning to stderr when the source is clear, which a user sees on every clear.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "cat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\"",
+      "with": "case $(cat) in *'\"source\"'*'\"clear\"'*) echo noise >&2 ;; esac\ncat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\""
+    }
+  ],
+  "catches": {
+    "check": "S4",
+    "assertion": "clear-stderr"
+  }
+}

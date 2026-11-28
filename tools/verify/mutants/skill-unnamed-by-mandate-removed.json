@@ -1,0 +1,14 @@
+{
+  "id": "skill-unnamed-by-mandate-removed",
+  "description": "A whole skill directory the mandate does not name is deleted. The tree and the session still agree with each other, so S2 passes.",
+  "edits": [
+    {
+      "op": "delete",
+      "path": "plugins/pstack/skills/bro"
+    }
+  ],
+  "catches": {
+    "check": "S1",
+    "assertion": "inventory"
+  }
+}

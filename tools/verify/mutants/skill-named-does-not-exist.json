@@ -1,0 +1,15 @@
+{
+  "id": "skill-named-does-not-exist",
+  "description": "A skill is named does-not-exist, the name the check types to prove an unknown command is passed on.",
+  "edits": [
+    {
+      "op": "write",
+      "path": "plugins/pstack/skills/does-not-exist/SKILL.md",
+      "content": "---\nname: does-not-exist\ndescription: A skill with the name of an unknown command.\n---\n\nDo nothing.\n"
+    }
+  ],
+  "catches": {
+    "check": "S6",
+    "assertion": "passed-through"
+  }
+}

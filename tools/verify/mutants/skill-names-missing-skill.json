@@ -1,0 +1,16 @@
+{
+  "id": "skill-names-missing-skill",
+  "description": "A skill tells the model to load a pstack: skill the plugin does not ship.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/skills/poteto-mode/SKILL.md",
+      "find": "pstack:poteto-agent",
+      "with": "pstack:poteto-agent-removed"
+    }
+  ],
+  "catches": {
+    "check": "S1",
+    "assertion": "references"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "session-hook-sheet-noise",
+  "description": "The hook writes to stderr whenever it reads a sheet, so a user with a model sheet sees a warning at every start.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "  found=1\nelse",
+      "with": "  found=1\n  echo \"pstack: read $sheet\" >&2\nelse"
+    }
+  ],
+  "catches": {
+    "check": "S5",
+    "assertion": "sheet-off-ran"
+  }
+}

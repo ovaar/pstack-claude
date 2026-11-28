@@ -1,0 +1,13 @@
+{
+  "id": "agents-directory-removed",
+  "description": "The agents directory is gone, so every subagent the skills tell the model to start (pstack:poteto-agent and the review subagents) does not exist.",
+  "edits": [
+    {
+      "op": "delete",
+      "path": "plugins/pstack/agents"
+    }
+  ],
+  "catches": {
+    "check": "S1"
+  }
+}

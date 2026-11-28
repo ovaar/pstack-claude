@@ -1,0 +1,16 @@
+{
+  "id": "session-hook-off-by-default",
+  "description": "The switch defaults to off, so a user who set nothing gets no mandate while PSTACK_SESSION_HOOK=on still gets it.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "\"${PSTACK_SESSION_HOOK:-}\" = off",
+      "with": "\"${PSTACK_SESSION_HOOK:-off}\" = off"
+    }
+  ],
+  "catches": {
+    "check": "S5",
+    "assertion": "control-mandate"
+  }
+}

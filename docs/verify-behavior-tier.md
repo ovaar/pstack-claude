@@ -1,6 +1,6 @@
 # The model tier of the verifier
 
-`bun tools/verify.mjs --tier behavior` (and `--tier all`) drives real Claude Code sessions with `--model haiku` against a stage of this tree, and the checker judges them. The tier answers whether the mandate and the skills do what they say once a model is in the loop. It is sampled, small and capped. The zero-model tier, `--tier surface`, stays the one that must pass on every change.
+Read [verifier.md](verifier.md) first. `bun tools/verify.mjs --tier behavior` (and `--tier all`) drives real Claude Code sessions with `--model haiku` against a stage of this tree, and the checker judges them. The tier answers whether the mandate and the skills do what they say once a model is in the loop. It is sampled, small and capped. The zero-model tier, `--tier surface`, stays the one that must pass on every change.
 
 ## Running it
 
@@ -70,18 +70,18 @@ The fixtures include sessions that routed (B1), sessions that did not (B5, B2), 
 
 Planted mistakes in a scratch clone of the tree, each run through the real tier, are in the pull request's test run: the mandate replaced by a neutral sentence (B1 fails), `disable-model-invocation` on `why` (B3), `user-invocable: false` on `how` (B4), the hook ignoring the off switch (B5), and a mandate that routes every message (B2). The untouched tree passes all five.
 
-## The CI job a later unit needs
+## In CI
 
-This unit adds none. A later unit should add a workflow file of its own, never an edit to `ci.yml`:
+The `Claude Code behavior (haiku)` job in `.github/workflows/behavior.yml` runs `bun tools/verify.mjs --tier all --require-behavior` on pull requests from this repository, on pushes to main, nightly and by hand. It reads `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` from a GitHub environment named `claude-behavior`, in the three steps that need it and nowhere else. It passes only on `PASS` with every tier n/n.
 
-- `credential` job in an environment such as `claude-behavior`: read `secrets.CLAUDE_CODE_OAUTH_TOKEN` and `secrets.ANTHROPIC_API_KEY` into step-level environment and write an output `present`. With both empty, print `::warning title=Behavior checks SKIPPED::no CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY` and the same line in the job summary. A skipped job counts as green, so the job must never be a required check.
-- `behavior` job with `needs: [credential]` and `if: needs.credential.outputs.present == 'true'`: checkout and setup-bun at 40-character SHAs, the CLI installed at the version `tools/verify/cli-pin.json` verifies, then `bun tools/verify.mjs --tier behavior --require-behavior --evidence "$RUNNER_TEMP/verify"` with the token in that one step's environment and nothing else. The evidence's `evidence.md` goes to the job summary. Behavior traces are not uploaded.
-- Never `pull_request_target` and never `--bare`, which skips the plugin's hooks.
-- The surface job's summary should say `behavior tier: NOT RUN in CI (no credential)` when the credential job found none.
+- With no credential the job passes and says it skipped, in a `::notice` and in the job summary: `behavior tier: SKIPPED ... this is not a pass`. The fork has no secret today, so this is what CI shows.
+- A pull request from a fork gets no secret. The `behavior-fork` job runs instead and says the same.
+- Before the evidence is uploaded, the directory is searched for each credential's value. A hit deletes it and fails the job. Setup records credentials by name only, so a hit means the CLI wrote one.
+- The evidence holds the model's own words, the stream's session and message ids, and a `rate_limit_event` with the account's rate-limit status (window, reset time, overage). It holds no credential. It is kept 14 days, and anyone who can read the repository's Actions can download it.
 
 ## Not proven
 
-- The tier has not run on Linux or in CI, and not with a real token in a throwaway config directory. The clean mode is covered by the stand-in and by a dummy key (`credential present but rejected`, measured with a zero-cost call).
+- The tier has not run on Linux or in CI, and not with a real token in a throwaway config directory. The CI job's skip path and its handling of a credential are tested with a dummy one against a stub (`tests/verify/behavior-workflow.test.mjs`). The clean mode is covered by the stand-in and by a dummy key (`credential present but rejected`, measured with a zero-cost call).
 - The rates are small samples on the `haiku` alias, which will point at other models over time. The evidence records the model id and the sample size.
 - Every recorded session is from one machine and one account.
 - B4's rate is the least certain: its subagent brief reached an `Agent` call in 5 of 7 earlier probe sessions and in 3 of 3 of the last run. At about 70 percent a rule of 2 of 3 would miss about one run in five, so a red B4 alone is rerun before it is read as a regression.

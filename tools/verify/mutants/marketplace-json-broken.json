@@ -1,0 +1,15 @@
+{
+  "id": "marketplace-json-broken",
+  "description": "marketplace.json is not JSON, so `claude plugin marketplace add` fails for every user who installs from the marketplace.",
+  "edits": [
+    {
+      "op": "write",
+      "path": ".claude-plugin/marketplace.json",
+      "content": "{ \"name\": \"pstack-claude\",\n"
+    }
+  ],
+  "catches": {
+    "check": "S10",
+    "assertion": "parses"
+  }
+}

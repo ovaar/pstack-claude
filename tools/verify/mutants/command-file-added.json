@@ -1,0 +1,15 @@
+{
+  "id": "command-file-added",
+  "description": "A commands/ file is back, which the plugin must never provide: a skill is its own slash command (#22).",
+  "edits": [
+    {
+      "op": "write",
+      "path": "plugins/pstack/commands/stray.md",
+      "content": "---\ndescription: a command with no skill behind it\n---\n\nDo nothing.\n"
+    }
+  ],
+  "catches": {
+    "check": "S1",
+    "assertion": "no-commands"
+  }
+}

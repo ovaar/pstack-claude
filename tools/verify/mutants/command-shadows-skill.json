@@ -1,0 +1,15 @@
+{
+  "id": "command-shadows-skill",
+  "description": "A commands/ file takes the name of an existing skill, so the typed slash command runs a trampoline instead of the skill (f5f24cb, c42e947).",
+  "edits": [
+    {
+      "op": "write",
+      "path": "plugins/pstack/commands/bro.md",
+      "content": "---\ndescription: a command beside the skill of the same name\n---\n\nRestate your last message.\n"
+    }
+  ],
+  "catches": {
+    "check": "S6",
+    "assertion": "expanded"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "agents-key-restricts",
+  "description": "plugin.json gains an agents key naming one file, so the loader provides that agent alone and every other agent a skill starts is gone.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/.claude-plugin/plugin.json",
+      "find": "  \"license\": \"MIT\",\n",
+      "with": "  \"license\": \"MIT\",\n  \"agents\": [\"./agents/poteto-agent.md\"],\n"
+    }
+  ],
+  "catches": {
+    "check": "S1",
+    "assertion": "agents"
+  }
+}

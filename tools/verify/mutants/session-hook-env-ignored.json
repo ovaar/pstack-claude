@@ -1,0 +1,16 @@
+{
+  "id": "session-hook-env-ignored",
+  "description": "PSTACK_SESSION_HOOK=off is ignored, so a cloud session that sets it still gets the mandate (278d485).",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "[ \"${PSTACK_SESSION_HOOK:-}\" = off ] || ",
+      "with": ""
+    }
+  ],
+  "catches": {
+    "check": "S5",
+    "assertion": "env-off-silent"
+  }
+}

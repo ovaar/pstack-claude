@@ -1,0 +1,16 @@
+{
+  "id": "matcher-drops-resume",
+  "description": "The SessionStart matcher leaves out resume, so a session started by --continue gets no mandate (af7aa63).",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/hooks.json",
+      "find": "startup|resume|clear|compact",
+      "with": "startup|clear|compact"
+    }
+  ],
+  "catches": {
+    "check": "S4",
+    "assertion": "resume-one-response"
+  }
+}

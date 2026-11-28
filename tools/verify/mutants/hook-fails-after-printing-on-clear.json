@@ -1,0 +1,16 @@
+{
+  "id": "hook-fails-after-printing-on-clear",
+  "description": "The hook prints the mandate and then exits 1 when the source is clear: the mandate arrives and the hook still reports failure on clear only.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "cat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\"",
+      "with": "cat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\"\ncase $(cat) in *'\"source\"'*'\"clear\"'*) exit 1 ;; esac"
+    }
+  ],
+  "catches": {
+    "check": "S4",
+    "assertion": "clear-outcome"
+  }
+}

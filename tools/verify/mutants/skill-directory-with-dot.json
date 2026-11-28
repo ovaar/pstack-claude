@@ -1,0 +1,15 @@
+{
+  "id": "skill-directory-with-dot",
+  "description": "A skill directory is named say.it: typing /pstack:say.it, the name the tree gives, is not echoed as that skill's command.",
+  "edits": [
+    {
+      "op": "write",
+      "path": "plugins/pstack/skills/say.it/SKILL.md",
+      "content": "---\nname: say-it\ndescription: Say the last message again, plainly.\n---\n\nSay it plainly.\n"
+    }
+  ],
+  "catches": {
+    "check": "S6",
+    "assertion": "resolved"
+  }
+}

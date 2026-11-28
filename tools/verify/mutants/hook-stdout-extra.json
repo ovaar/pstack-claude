@@ -1,0 +1,16 @@
+{
+  "id": "hook-stdout-extra",
+  "description": "The hook prints a line before the mandate, so what a session receives is no longer the mandate file byte for byte.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "cat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\"",
+      "with": "echo extra\ncat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\""
+    }
+  ],
+  "catches": {
+    "check": "S3",
+    "assertion": "stdout"
+  }
+}

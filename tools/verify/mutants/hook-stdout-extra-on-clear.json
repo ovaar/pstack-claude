@@ -1,0 +1,16 @@
+{
+  "id": "hook-stdout-extra-on-clear",
+  "description": "The hook prints a line before the mandate when the source is clear, so a clear session does not get the mandate byte for byte.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "cat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\"",
+      "with": "case $(cat) in *'\"source\"'*'\"clear\"'*) echo extra ;; esac\ncat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\""
+    }
+  ],
+  "catches": {
+    "check": "S4",
+    "assertion": "clear-stdout"
+  }
+}

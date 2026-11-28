@@ -1,0 +1,16 @@
+{
+  "id": "marketplace-version-stale",
+  "description": "marketplace.json gives the plugin a version that is not the one VERSION and the plugin manifest hold, so the updater compares against the wrong number.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": ".claude-plugin/marketplace.json",
+      "find": "\"version\": \"",
+      "with": "\"version\": \"0."
+    }
+  ],
+  "catches": {
+    "check": "S10",
+    "assertion": "version"
+  }
+}

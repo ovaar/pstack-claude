@@ -1,0 +1,16 @@
+{
+  "id": "session-hook-project-sheet-noise",
+  "description": "The hook writes to stderr when it takes the sheet committed with the project, so everyone who works in that project sees a warning at every start.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "[ ! -f \"$root/.claude/pstack-models.md\" ] || sheet=\"$root/.claude/pstack-models.md\"",
+      "with": "[ ! -f \"$root/.claude/pstack-models.md\" ] || { sheet=\"$root/.claude/pstack-models.md\"; echo \"pstack: project sheet $sheet\" >&2; }"
+    }
+  ],
+  "catches": {
+    "check": "S5",
+    "assertion": "project-sheet-off-ran"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "matcher-drops-compact",
+  "description": "The SessionStart matcher leaves out compact, which no surface run can drive: only the registered matcher guards it.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/hooks.json",
+      "find": "startup|resume|clear|compact",
+      "with": "startup|resume|clear"
+    }
+  ],
+  "catches": {
+    "check": "S4",
+    "assertion": "registered"
+  }
+}

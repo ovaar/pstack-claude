@@ -1,0 +1,16 @@
+{
+  "id": "hook-registered-twice",
+  "description": "A second command is registered on the same SessionStart matcher, so a startup session gets two hook responses and the mandate reaches it twice over.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/hooks.json",
+      "find": "          }\n        ]\n      }\n    ]",
+      "with": "          },\n          {\n            \"type\": \"command\",\n            \"command\": \"echo second\"\n          }\n        ]\n      }\n    ]"
+    }
+  ],
+  "catches": {
+    "check": "S3",
+    "assertion": "one-response"
+  }
+}

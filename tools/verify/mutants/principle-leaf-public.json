@@ -1,0 +1,16 @@
+{
+  "id": "principle-leaf-public",
+  "description": "A principle-* leaf loses user-invocable: false, so it shows in the slash menu as a command.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/skills/principle-fix-root-causes/SKILL.md",
+      "find": "user-invocable: false\n",
+      "with": ""
+    }
+  ],
+  "catches": {
+    "check": "S6",
+    "assertion": "leaves-refused"
+  }
+}

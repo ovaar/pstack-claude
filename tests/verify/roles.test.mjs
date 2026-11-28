@@ -11,10 +11,14 @@ import { FIXTURES } from "./scrub.mjs";
 
 const VERIFY = dirname(CHECKS_DIR);
 const read = (file) => readFileSync(join(VERIFY, file), "utf8");
-const modules = readdirSync(VERIFY, { recursive: true })
+const everyModule = readdirSync(VERIFY, { recursive: true })
   .filter((file) => file.endsWith(".mjs"))
   .map((file) => file.split("\\").join("/"))
   .sort();
+// The push gate is no fourth role: it runs the verifier as a user would and
+// reads one line it prints. It is held apart below instead.
+const GATE = "gate.mjs";
+const modules = everyModule.filter((file) => file !== GATE);
 const checkFiles = modules.filter((file) => file.startsWith("checks/"));
 
 const startsProcesses = (source) => /child_process|\bBun\s*\.\s*(?:spawn|\$)/.test(source);
@@ -59,6 +63,12 @@ test("the scan sees every way a module can reach the file system", () => {
 
 test("only setup and the driver can start a process", () => {
   expect(modules.filter((file) => startsProcesses(read(file)))).toEqual(["drive.mjs", "setup.mjs"]);
+});
+
+test("the push gate starts the verifier only, and no role module imports it", () => {
+  expect(everyModule).toContain(GATE);
+  expect(imports(read(GATE)).filter((specifier) => specifier.startsWith(".") && !["../plugin.mjs", "./paths.mjs", "./setup.mjs", "./verdict.mjs"].includes(specifier))).toEqual([]);
+  expect(modules.filter((file) => imports(read(file)).some((specifier) => specifier.endsWith("gate.mjs")))).toEqual([]);
 });
 
 test("the checker reaches neither of them through its imports", () => {

@@ -1,0 +1,16 @@
+{
+  "id": "marketplace-name-differs",
+  "description": "marketplace.json lists the plugin under another name than its manifest, so a user installs pstack-claude@pstack-claude and gets nothing.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": ".claude-plugin/marketplace.json",
+      "find": "\"name\": \"pstack\",",
+      "with": "\"name\": \"pstack-claude\","
+    }
+  ],
+  "catches": {
+    "check": "S10",
+    "assertion": "name"
+  }
+}

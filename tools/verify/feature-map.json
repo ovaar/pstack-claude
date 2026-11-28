@@ -1,0 +1,188 @@
+{
+  "covered": [
+    {
+      "feature": "The plugin manifest loads with no error, at the version in VERSION, and provides what the tree holds",
+      "globs": [
+        "plugins/pstack/.claude-plugin/plugin.json",
+        "VERSION"
+      ],
+      "checks": [
+        "S1",
+        "S2",
+        "S3",
+        "S10"
+      ]
+    },
+    {
+      "feature": "Every skill directory is provided under its own name, the skills match the inventory, and every user-invocable skill reaches the session",
+      "globs": [
+        "plugins/pstack/skills/*/SKILL.md"
+      ],
+      "checks": [
+        "S1",
+        "S2"
+      ]
+    },
+    {
+      "feature": "A typed /pstack:<skill> is resolved before any model call, and only the principle-* leaves are refused",
+      "globs": [
+        "plugins/pstack/skills/*/SKILL.md"
+      ],
+      "checks": [
+        "S6"
+      ]
+    },
+    {
+      "feature": "Every agent file is provided under its frontmatter name, the agents match the inventory, and every pstack: name the tree mentions exists",
+      "globs": [
+        "plugins/pstack/agents/*.md"
+      ],
+      "checks": [
+        "S1"
+      ]
+    },
+    {
+      "feature": "The routing mandate arrives once, byte for byte, on startup, resume and clear, and the matcher covers compact",
+      "globs": [
+        "plugins/pstack/hooks/hooks.json",
+        "plugins/pstack/hooks/session-start.sh",
+        "plugins/pstack/hooks/session-start-context.md"
+      ],
+      "checks": [
+        "S1",
+        "S3",
+        "S4"
+      ]
+    },
+    {
+      "feature": "PSTACK_SESSION_HOOK=off and session hook: off in pstack-models.md, under the config directory or in the project's .claude/, turn the mandate off, and PSTACK_SESSION_HOOK=on does not",
+      "globs": [
+        "plugins/pstack/hooks/session-start.sh",
+        "plugins/pstack/skills/setup-pstack/scripts/read-sheet.sh"
+      ],
+      "checks": [
+        "S5"
+      ]
+    },
+    {
+      "feature": "With the mandate, a multi-file bug routes to poteto-mode before any edit and a one-line question stays direct; without it, the same bug does not route (model tier)",
+      "globs": [
+        "plugins/pstack/hooks/session-start-context.md",
+        "plugins/pstack/skills/poteto-mode/SKILL.md"
+      ],
+      "checks": [
+        "B1",
+        "B2",
+        "B5"
+      ]
+    },
+    {
+      "feature": "A skill the prompt names loads through the Skill tool (model tier)",
+      "globs": [
+        "plugins/pstack/skills/why/SKILL.md"
+      ],
+      "checks": [
+        "B3"
+      ]
+    },
+    {
+      "feature": "A typed /pstack:how expands and its brief reaches a subagent (model tier)",
+      "globs": [
+        "plugins/pstack/skills/how/SKILL.md"
+      ],
+      "checks": [
+        "B4"
+      ]
+    },
+    {
+      "feature": "The marketplace manifest parses, validates, and names the plugin directory, name and version the tree holds",
+      "globs": [
+        ".claude-plugin/marketplace.json"
+      ],
+      "checks": [
+        "S10"
+      ]
+    }
+  ],
+  "uncovered": [
+    {
+      "globs": [
+        "plugins/pstack/skills/**"
+      ],
+      "reason": "Each SKILL.md is judged for loading, its slash command and, for poteto-mode, why and how, its routing. The other skill bodies, references, scripts and playbooks are not driven."
+    },
+    {
+      "globs": [
+        "plugins/pstack/agents/**"
+      ],
+      "reason": "S1 reads each agent's frontmatter name. No check dispatches a plugin agent, so what an agent does is not judged."
+    },
+    {
+      "globs": [
+        "plugins/pstack/hooks/agy-context.awk",
+        "plugins/pstack/hooks/codex-hooks.json",
+        "plugins/pstack/hooks/copilot-context.awk",
+        "plugins/pstack/hooks/copilot-hooks.json",
+        "plugins/pstack/hooks/json.awk",
+        "plugins/pstack/hooks/kimi-instructions.md",
+        "plugins/pstack/hooks/muse-context.awk",
+        "plugins/pstack/hooks/pre-tool-use.awk",
+        "plugins/pstack/hooks/pre-tool-use.sh",
+        "plugins/pstack/hooks/script-contracts.awk",
+        "plugins/pstack/hooks/session-start-agy.md",
+        "plugins/pstack/hooks/session-start-copilot-setup.md",
+        "plugins/pstack/hooks/session-start-copilot-sheet.md",
+        "plugins/pstack/hooks/session-start-copilot.md",
+        "plugins/pstack/hooks/session-start-minimax.md",
+        "plugins/pstack/hooks/session-start-muse-sheet.md",
+        "plugins/pstack/hooks/session-start-muse.md",
+        "plugins/pstack/hooks/session-start-opencode.md",
+        "plugins/pstack/hooks/session-start.ps1"
+      ],
+      "reason": "The other runtimes' hook files, and the PreToolUse script, which the Claude Code build does not register. A new file in this folder is unmapped until it is listed here or covered."
+    },
+    {
+      "globs": [
+        "plugins/pstack/hooks/hooks.json"
+      ],
+      "reason": "S1 judges that the loader provides every hook it registers, and S3, S4 and S5 run the SessionStart one. Hook events other than SessionStart in this file are loaded but never run."
+    },
+    {
+      "globs": [
+        "plugins/pstack/hooks.json",
+        "plugins/pstack/.antigravity-plugin/**",
+        "plugins/pstack/.codex-plugin/**",
+        "plugins/pstack/.github/**",
+        "plugins/pstack/.grok-plugin/**",
+        "plugins/pstack/.muse-plugin/**",
+        "plugins/pstack/grok/**",
+        "plugins/pstack/omp/**",
+        "plugins/pstack/opencode/**",
+        "plugins/pstack/pi/**"
+      ],
+      "reason": "Another runtime's build. This verifier drives Claude Code only."
+    },
+    {
+      "globs": [
+        "plugins/pstack/.claude-plugin/icon.png",
+        "plugins/pstack/assets/**"
+      ],
+      "reason": "Images. No check opens them."
+    },
+    {
+      "globs": [
+        "plugins/pstack/models.json",
+        "plugins/pstack/package.json",
+        "plugins/pstack/LICENSE",
+        "plugins/pstack/README.md"
+      ],
+      "reason": "Read by the generator or by people. The generator's own check and the test suite cover the stamps."
+    },
+    {
+      "globs": [
+        ".claude-plugin/marketplace.json"
+      ],
+      "reason": "S10 validates the manifest the way the loader reads it. No check installs through a marketplace: `/plugin marketplace add` and the updater that installs by version are not driven."
+    }
+  ]
+}

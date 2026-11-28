@@ -1,0 +1,16 @@
+{
+  "id": "marketplace-source-moved",
+  "description": "marketplace.json points at a plugin directory that is not there, which the validator accepts.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": ".claude-plugin/marketplace.json",
+      "find": "\"source\": \"./plugins/pstack\"",
+      "with": "\"source\": \"./plugins/pstack-claude\""
+    }
+  ],
+  "catches": {
+    "check": "S10",
+    "assertion": "source"
+  }
+}

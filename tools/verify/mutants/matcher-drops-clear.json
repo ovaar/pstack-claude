@@ -1,0 +1,16 @@
+{
+  "id": "matcher-drops-clear",
+  "description": "The SessionStart matcher leaves out clear, so a session started by /clear gets no mandate (af7aa63).",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/hooks.json",
+      "find": "startup|resume|clear|compact",
+      "with": "startup|resume|compact"
+    }
+  ],
+  "catches": {
+    "check": "S4",
+    "assertion": "clear-one-response"
+  }
+}

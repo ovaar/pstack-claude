@@ -1,0 +1,16 @@
+{
+  "id": "session-hook-project-sheet-ignored",
+  "description": "The hook no longer looks for a sheet committed with the project, so `session hook: off` in the project's .claude/pstack-models.md no longer turns the mandate off.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "[ ! -f \"$root/.claude/pstack-models.md\" ] || sheet=\"$root/.claude/pstack-models.md\"",
+      "with": ":"
+    }
+  ],
+  "catches": {
+    "check": "S5",
+    "assertion": "project-sheet-off-silent"
+  }
+}
