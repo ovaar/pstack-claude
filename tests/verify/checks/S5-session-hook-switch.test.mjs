@@ -21,12 +21,12 @@ const said = (judged, id) => {
   return `saw ${item.saw}, want ${item.want}`;
 };
 
-test("the untouched tree passes, and its row tells the control's mandate from the two silences", async () => {
+test("the untouched tree passes, and its row tells the control's mandate from the three silences", async () => {
   const result = await check(evidence(S5), S5.checks);
   expect(result.checks.find((each) => each.id === "S5")).toMatchObject({ verdict: "pass", failed: [], observations: [] });
   const ran = "1 hook_response named SessionStart:startup; exit_code 0; outcome success";
   expect(markdown(result).split("\n").find((line) => line.startsWith("| S5 "))).toBe(
-    `| S5 the session hook switches turn the mandate off | pass | ${ran}; stdout sha256 ${MANDATE_SHA256} (983 bytes); ${ran}; stdout sha256 ${MANDATE_SHA256} (983 bytes); ${ran}; stdout 0 bytes; ${ran}; stdout 0 bytes; 56 of 56 integrity rules hold |`,
+    `| S5 the session hook switches turn the mandate off | pass | ${ran}; stdout sha256 ${MANDATE_SHA256} (983 bytes); ${ran}; stdout sha256 ${MANDATE_SHA256} (983 bytes); ${ran}; stdout 0 bytes; ${ran}; stdout 0 bytes; ${ran}; stdout 0 bytes; 70 of 70 integrity rules hold |`,
   );
 });
 
@@ -49,6 +49,12 @@ describe("recorded failures", () => {
     expect(judged.failed).toEqual(["S5.sheet-off-silent"]);
   });
 
+  test("a hook that ignores the sheet committed with the project fails project-sheet-off-silent alone", async () => {
+    const judged = await judge({ "S5.project-sheet-off": { fixture: "project-sheet-ignored.S5.project-sheet-off" } });
+    expect(judged.failed).toEqual(["S5.project-sheet-off-silent"]);
+    expect(said(judged, "project-sheet-off-silent")).toBe("saw stdout 983 bytes, want stdout of 0 bytes");
+  });
+
   test("a hook that prints nothing in every case fails the control, so silence elsewhere proves nothing", async () => {
     const judged = await judge({ "S5.control": { fixture: "mandate-never-printed.S5.control" } });
     expect(judged.failed).toEqual(["S5.control-mandate"]);
@@ -64,6 +70,8 @@ describe("one doctored trace per assertion", () => {
     ["S5.env-on-mandate", { "S5.env-on": { events: (events) => void (hook(events).stdout += " ") } }],
     ["S5.sheet-off-ran", { "S5.sheet-off": { events: (events) => void (hook(events).stderr = "warning: slow disk\n") } }],
     ["S5.control-mandate", { "S5.control": { events: (events) => void (hook(events).stdout += " ") } }],
+    ["S5.project-sheet-off-ran", { "S5.project-sheet-off": { events: (events) => void Object.assign(hook(events), { exit_code: 1, outcome: "error" }) } }],
+    ["S5.project-sheet-off-silent", { "S5.project-sheet-off": { events: (events) => void (hook(events).stdout = "x") } }],
   ])("%s fails", async (id, edits) => {
     expect((await judge(edits)).failed).toContain(id);
   });

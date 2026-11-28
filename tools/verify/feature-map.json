@@ -55,7 +55,7 @@
       ]
     },
     {
-      "feature": "PSTACK_SESSION_HOOK=off and session hook: off in pstack-models.md turn the mandate off, and PSTACK_SESSION_HOOK=on does not",
+      "feature": "PSTACK_SESSION_HOOK=off and session hook: off in pstack-models.md, under the config directory or in the project's .claude/, turn the mandate off, and PSTACK_SESSION_HOOK=on does not",
       "globs": [
         "plugins/pstack/hooks/session-start.sh",
         "plugins/pstack/skills/setup-pstack/scripts/read-sheet.sh"

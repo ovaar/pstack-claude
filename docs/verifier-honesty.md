@@ -76,7 +76,7 @@ assertion has none. The tests in `tests/verify/checks/B*.test.mjs` doctor more f
 
 ## The table today
 
-On CLI 2.1.332: `honesty: OK, 53 of 53 caught, 0 known escapes, 0 failing`. The five escapes found
+On CLI 2.1.332: `honesty: OK, 55 of 55 caught, 0 known escapes, 0 failing`. The five escapes found
 on the core (matcher narrowed to startup, marketplace.json broken, agents directory removed, an
 unnamed skill removed, a command shadowing a skill) are caught by S4, S10, S1, S1 and S6, and
 `baseline.json` is 0.

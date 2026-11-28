@@ -38,7 +38,7 @@ The first line is the verdict, then the evidence table. Evidence goes to `<git d
 | S2 | The plugin loads from the tree with no error, and every user-invocable skill reaches the session. |
 | S3 | The mandate arrives once at startup, byte for byte, with exit 0 and no stderr. |
 | S4 | The same on resume and clear, and the matcher covers compact. |
-| S5 | `PSTACK_SESSION_HOOK=off` and `session hook: off` in the sheet turn the mandate off; `on` and no switch do not. |
+| S5 | `PSTACK_SESSION_HOOK=off`, and `session hook: off` in the user's sheet or in the project's `.claude/pstack-models.md`, turn the mandate off; `on` and no switch do not. |
 | S6 | Each typed `/pstack:<skill>` is resolved before any model call; only the `principle-*` leaves are refused; an unknown name is passed on. |
 | S10 | The marketplace manifest validates and names the plugin directory, name and version the tree holds. |
 | B1 to B5 | With the mandate a multi-file bug routes to `poteto-mode` and a small question does not; a named skill loads; a typed `/pstack:how` reaches a subagent; without the mandate the bug does not route. [verify-behavior-tier.md](verify-behavior-tier.md) has the prompts and pass rules. |
@@ -79,7 +79,7 @@ A pull request from a fork gets no secret and a job that says the model tier did
 
 ## Honesty
 
-A check that passes on a broken plugin is worse than none. `bun tools/verify.mjs honesty` plants every mistake in `tools/verify/mutants/` in a scratch copy and runs the real surface tier on each; today it catches 53 of 53, with no known escape. Every assertion of a surface check is named by a planted mistake; every assertion of a behavior check is proved by a doctored recording instead, since planting one would drive a model. [verifier-honesty.md](verifier-honesty.md) has the file format, the ratchet and the rules.
+A check that passes on a broken plugin is worse than none. `bun tools/verify.mjs honesty` plants every mistake in `tools/verify/mutants/` in a scratch copy and runs the real surface tier on each; today it catches 55 of 55, with no known escape. Every assertion of a surface check is named by a planted mistake; every assertion of a behavior check is proved by a doctored recording instead, since planting one would drive a model. [verifier-honesty.md](verifier-honesty.md) has the file format, the ratchet and the rules.
 
 ## Escaped bugs
 
@@ -105,5 +105,6 @@ A bug that reached a release gets an entry in `tools/verify/escapes.json` in the
 - The interactive slash menu and Windows.
 - Whether the mandate picks a skill unprompted: B3 names it. See [verify-behavior-tier.md](verify-behavior-tier.md#measured-and-not-a-check).
 - Sessions started outside the repository root, and `--no-verify`, which the gate cannot see.
+- The project sheet found from a subdirectory. S5 lays `.claude/pstack-models.md` in a working directory that is no repository, so the hook's walk up to the repository root never runs.
 
 `tools/verify/feature-map.json` lists every uncovered path with its reason.
