@@ -23,6 +23,8 @@ afterEach(() => {
 const reply = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }] });
 const failure = (message) => ({ content: [{ type: "text", text: JSON.stringify({ _tag: "OrchestratorMcpFailure", message }) }], isError: true });
 const delegated = { taskId: "task-1", childThreadId: "thread-1", childRunId: "run-1" };
+// end() stops waiting for the thread after its grace; a grace that outlasts the test keeps that timer out of the run under test.
+const GRACE_MS = 60_000;
 
 const sse = (reply) => `event: message\ndata: ${JSON.stringify(reply)}\n\n`;
 
@@ -149,7 +151,7 @@ describe("T3Child", () => {
     expect(await child.steer("first")).toEqual({ response: { success: true }, taken: true });
     expect(await child.steer("second")).toEqual({ response: undefined, taken: false });
     expect(calls.filter((c) => c.name === "t3_thread_send").map((c) => c.args.mode)).toEqual(["steer", "steer"]);
-    child.end();
+    child.end(GRACE_MS);
     expect(await child.exited).toMatchObject({ settled: false, errorMessage: "Child task ended with status interrupted." });
     expect(calls.find((c) => c.name === "task_cancel").args).toMatchObject({ taskId: "task-1" });
     expect(await child.steer("late")).toEqual({ response: undefined, taken: false });
@@ -164,9 +166,9 @@ describe("T3Child", () => {
       t3_thread_wait: () => reply({ status: "interrupted", timedOut: false }),
       task_status: () => reply({ status: "interrupted", summary: null }),
     });
-    const child = new T3Child(session, { title: "probe", onStart: () => child.end() }, "work");
+    const child = new T3Child(session, { title: "probe", onStart: () => {} }, "work");
     await waitFor(() => calls.length === 1);
-    child.end();
+    child.end(GRACE_MS);
     answer();
     expect((await child.exited).settled).toBe(false);
     expect(calls.map((c) => c.name)).toEqual(["delegate_task", "task_cancel", "t3_thread_wait", "task_status"]);
@@ -195,7 +197,7 @@ describe("T3Child", () => {
     });
     const child = new T3Child(session, { title: "probe", onStart: () => {} }, "x");
     await waitFor(() => calls.some((c) => c.name === "task_status"));
-    child.end();
+    child.end(GRACE_MS);
     expect(await child.exited).toMatchObject({ settled: true, finalText: "the answer" });
   });
 
