@@ -134,6 +134,12 @@ The `open-pstack` installer in `installer/` is versioned with the rest: the gene
 - One concern per PR. A behavior fix and a refactor in the same diff are two separate reviews, and reviewing them together means doing neither properly.
 - Claim only what you verified, and name the check. "52/52 bun tests pass" beats "tests pass"; "did not run the behavioral leg" beats silence.
 
+## Bugs that reached a release
+
+A bug that shipped in a release gets an entry in `tools/verify/escapes.json` in the same pull request as its fix.
+The entry names the `CHANGES.md` version it escaped in, a one-line description, and the verifier check id or the test file that should now fail on it.
+`tests/verify/escapes.test.mjs` fails on an entry whose version, check or test does not exist. It cannot judge that the named check or test fails on the bug, so the reviewer confirms that.
+
 ## Reporting bugs
 
 Include the pstack version, the Claude Code (or Codex, Pi, GitHub Copilot, Muse, or MiniMax Code) version, and the reproduction steps. [#22](https://github.com/michael-denyer/pstack-claude/issues/22) is the model to copy: it named versions, gave numbered steps, and included the experiment that isolated the cause.
