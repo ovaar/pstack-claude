@@ -151,7 +151,7 @@ describe("T3Child", () => {
     expect(await child.steer("first")).toEqual({ response: { success: true }, taken: true });
     expect(await child.steer("second")).toEqual({ response: undefined, taken: false });
     expect(calls.filter((c) => c.name === "t3_thread_send").map((c) => c.args.mode)).toEqual(["steer", "steer"]);
-    child.end();
+    child.end(GRACE_MS);
     expect(await child.exited).toMatchObject({ settled: false, errorMessage: "Child task ended with status interrupted." });
     expect(calls.find((c) => c.name === "task_cancel").args).toMatchObject({ taskId: "task-1" });
     expect(await child.steer("late")).toEqual({ response: undefined, taken: false });
@@ -197,7 +197,7 @@ describe("T3Child", () => {
     });
     const child = new T3Child(session, { title: "probe", onStart: () => {} }, "x");
     await waitFor(() => calls.some((c) => c.name === "task_status"));
-    child.end();
+    child.end(GRACE_MS);
     expect(await child.exited).toMatchObject({ settled: true, finalText: "the answer" });
   });
 
