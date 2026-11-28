@@ -77,7 +77,7 @@ The `Claude Code behavior (haiku)` job in `.github/workflows/behavior.yml` runs 
 - With no credential the job passes and says it skipped, in a `::notice` and in the job summary: `behavior tier: SKIPPED ... this is not a pass`. The fork has no secret today, so this is what CI shows.
 - A pull request from a fork gets no secret. The `behavior-fork` job runs instead and says the same.
 - Before the evidence is uploaded, the directory is searched for each credential's value. A hit deletes it and fails the job. Setup records credentials by name only, so a hit means the CLI wrote one.
-- The evidence holds the model's own words and the stream's ids. It is kept 14 days, and anyone who can read the repository's Actions can download it.
+- The evidence holds the model's own words, the stream's session and message ids, and a `rate_limit_event` with the account's rate-limit status (window, reset time, overage). It holds no credential. It is kept 14 days, and anyone who can read the repository's Actions can download it.
 
 ## Not proven
 
