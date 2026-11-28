@@ -23,6 +23,8 @@ afterEach(() => {
 const reply = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }] });
 const failure = (message) => ({ content: [{ type: "text", text: JSON.stringify({ _tag: "OrchestratorMcpFailure", message }) }], isError: true });
 const delegated = { taskId: "task-1", childThreadId: "thread-1", childRunId: "run-1" };
+// end() stops waiting for the thread after its grace; a grace that outlasts the test keeps that timer out of the run under test.
+const GRACE_MS = 60_000;
 
 const sse = (reply) => `event: message\ndata: ${JSON.stringify(reply)}\n\n`;
 
@@ -164,9 +166,9 @@ describe("T3Child", () => {
       t3_thread_wait: () => reply({ status: "interrupted", timedOut: false }),
       task_status: () => reply({ status: "interrupted", summary: null }),
     });
-    const child = new T3Child(session, { title: "probe", onStart: () => child.end() }, "work");
+    const child = new T3Child(session, { title: "probe", onStart: () => {} }, "work");
     await waitFor(() => calls.length === 1);
-    child.end();
+    child.end(GRACE_MS);
     answer();
     expect((await child.exited).settled).toBe(false);
     expect(calls.map((c) => c.name)).toEqual(["delegate_task", "task_cancel", "t3_thread_wait", "task_status"]);
