@@ -61,6 +61,21 @@ describe("the honesty job", () => {
     expect(summary.run).toContain("$RUNNER_TEMP/honesty.md");
   });
 
+  // Run, not read: a silenced step (`|| :`, `|| exit 0`) or a narrowed one
+  // (`--mutant <id>`) still contains the command text, so only running the
+  // body against a stub proves that every mutant is planted and that an
+  // escape fails the job.
+  const plant = stepNamed("honesty", "Plant known mistakes and check each is caught");
+
+  test("the plant step runs the whole honesty command once, and its failure is the step's", () => {
+    const ok = runStep(plant, { verdict: "honesty: OK 53/53", after: (dir) => dir });
+    expect(ok.passed).toBe(true);
+    expect(ok.calls).toEqual([`tools/verify.mjs honesty --out ${ok.after}/honesty.md`]);
+    const escaped = runStep(plant, { verdict: "honesty: FAIL 52/53", exit: 1 });
+    expect(escaped.passed).toBe(false);
+    expect(escaped.calls).toHaveLength(1);
+  });
+
   const ratchet = stepNamed("honesty", "Hold the planted mistakes to the base");
 
   test("a pull request is held to the merge base with its base branch, and the ratchet's verdict is the step's", () => {
