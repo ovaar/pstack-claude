@@ -149,6 +149,10 @@ jobs:
               exit 0
               ;;
           esac
+          if [ "$EVENT" = push ] && ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "ratchet: NOT RUN, the commit this push replaced is not in the checkout" | tee "$RUNNER_TEMP/ratchet.txt"
+            exit 0
+          fi
           status=0
           bun tools/verify.mjs honesty --base "$base" > "$RUNNER_TEMP/ratchet.txt" || status=$?
           cat "$RUNNER_TEMP/ratchet.txt"

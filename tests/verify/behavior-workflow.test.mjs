@@ -4,10 +4,11 @@
 // dummy one, against a stub bun, and what it prints, writes to the summary
 // and hands the next steps is read back. No step may print the credential.
 import { describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { runStep, stepNamed, TEXT, workflow } from "./workflow.mjs";
+import { ROOT, runStep, stepNamed, TEXT, workflow } from "./workflow.mjs";
 
 const DUMMY = "sk-ant-oat01-dummy-for-the-skip-path-test-0000";
 const CREDENTIALS = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"];
@@ -88,7 +89,16 @@ describe("the honesty job", () => {
   });
 
   test("a push is held to the commit it replaced, and a nightly run says it compared nothing", () => {
-    expect(runStep(ratchet, { env: { EVENT: "push", BEFORE: "a".repeat(40) }, verdict: "ratchet: OK" }).calls).toEqual([`tools/verify.mjs honesty --base ${"a".repeat(40)}`]);
+    const replaced = execFileSync("git", ["rev-parse", "HEAD"], { cwd: ROOT, encoding: "utf8" }).trim();
+    expect(runStep(ratchet, { env: { EVENT: "push", BEFORE: replaced }, verdict: "ratchet: OK" }).calls).toEqual([`tools/verify.mjs honesty --base ${replaced}`]);
+    const held = runStep(ratchet, { env: { EVENT: "push", BEFORE: replaced }, verdict: "ratchet: FAIL", exit: 1 });
+    expect(held.passed).toBe(false);
+    for (const gone of ["0".repeat(40), "a".repeat(40)]) {
+      const first = runStep(ratchet, { env: { EVENT: "push", BEFORE: gone }, verdict: "ratchet: FAIL", exit: 1 });
+      expect(first.passed).toBe(true);
+      expect(first.calls).toEqual([]);
+      expect(first.stdout).toBe("ratchet: NOT RUN, the commit this push replaced is not in the checkout\n");
+    }
     const nightly = runStep(ratchet, { env: { EVENT: "schedule" } });
     expect(nightly.passed).toBe(true);
     expect(nightly.calls).toEqual([]);
@@ -146,7 +156,7 @@ describe("the behavior job", () => {
       expect(pass.calls[0]).toStartWith("tools/verify.mjs --tier all --require-behavior --evidence ");
       expect(pass.calls[1]).toBe("tools/verify/verdict.mjs all");
       expect(leaks(pass)).toEqual([]);
-      for (const line of ["PARTIAL surface 7/7 | behavior NOT RUN: no credential | round 1", "PARTIAL surface 7/7 | behavior NOT RUN | round 1", "PASS surface 7/7 | behavior NOT BUILT | round 1", "STAND-IN surface 7/7 | behavior 5/5 (15 model calls, $0.0461) | round 1"]) {
+      for (const line of ["PARTIAL surface 7/7 | behavior NOT RUN: no credential | round 1", "PARTIAL surface 7/7 | behavior NOT RUN | round 1", "PASS surface 7/7 | behavior NOT BUILT | round 1", "PASS surface 7/7 | round 1", "STAND-IN surface 7/7 | behavior 5/5 (15 model calls, $0.0461) | round 1"]) {
         const result = runStep(verify, { env: { [name]: DUMMY }, verdict: line });
         expect(result.passed).toBe(false);
         expect(result.stdout).toContain(`::error title=Behavior checks not PASS::${line}`);

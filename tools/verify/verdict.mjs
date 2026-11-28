@@ -17,7 +17,8 @@
 //   ran and passed (n/n, n > 0), and the word is PASS, or PARTIAL with every
 //   other tier NOT RUN (with or without a reason) or NOT BUILT. A surface-only
 //   run prints PARTIAL once a behavior check exists, and that is expected.
-// all: what the behavior CI job asks. PASS, and every tier n/n.
+// all: what the behavior CI job asks. PASS, a behavior part, and every tier
+//   n/n.
 //
 // STAND-IN, SKIPPED, FAIL and a RECHECK of a run are never accepted.
 
@@ -44,6 +45,7 @@ export function judgeLine(line = "", scope = "surface") {
   if (!surface?.done) return result(false, `the surface tier did not run in full: ${surface?.part ?? "no surface part"}`);
   if (scope === "all") {
     if (word !== "PASS") return result(false, `the word is ${word}, and only PASS runs every tier`);
+    if (!tiers.some((each) => each.tier === "behavior")) return result(false, "no behavior part on the line");
     const short = tiers.filter((each) => !each.done);
     return short.length ? result(false, `not every tier ran in full: ${short.map((each) => each.part).join(", ")}`) : result(true);
   }
