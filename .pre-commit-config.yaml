@@ -2,6 +2,12 @@
 # The hook is the check CI's "Generated files current" job runs after
 # `bun install`. It reads the working tree, not the index, so an unstaged
 # regenerated file passes here and still fails CI.
+#
+# The verify-gate hook runs at the pre-push stage, so `prek install` (or
+# `pre-commit install`) installs both hook types, and the other hooks stay
+# commit-only.
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
 repos:
   - repo: local
     hooks:
@@ -11,6 +17,19 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      # Reruns the surface verifier on the commit being pushed and blocks on
+      # anything but PASS. It runs only when the push touches a path the
+      # verifier watches. PSTACK_VERIFY_GATE=off bypasses it. pre-commit and
+      # prek hand a hook one ref of a push and no stdin, so a push of several
+      # refs is judged whole only by `bun tools/verify/gate.mjs install-hook`.
+      - id: verify-gate
+        name: verifier passes on the pushed commit
+        entry: bun tools/verify/gate.mjs pre-push
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+        verbose: true
   - repo: https://github.com/gitleaks/gitleaks
     rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # v8.30.1
     hooks:
