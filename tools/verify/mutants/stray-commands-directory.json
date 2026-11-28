@@ -1,0 +1,6 @@
+{
+  "id": "stray-commands-directory",
+  "description": "A commands/ file with no skill of the same name adds a slash command the tree has no skill for (the class of f5f24cb and c42e947).",
+  "edits": [{ "op": "write", "path": "plugins/pstack/commands/stray.md", "content": "---\ndescription: a command with no skill behind it\n---\n\nDo nothing.\n" }],
+  "catches": { "check": "S2", "assertion": "commands" }
+}

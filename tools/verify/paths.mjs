@@ -15,6 +15,7 @@ export const PRODUCT = [PLUGIN, ".claude-plugin", "VERSION"];
 export const JUDGE = [
   "tools/verify.mjs",
   "tools/verify",
+  "tools/honesty.mjs",
   "tests/verify",
   ".claude/settings.json",
   ".github/workflows/behavior.yml",

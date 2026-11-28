@@ -1,0 +1,13 @@
+{
+  "id": "hooks-json-deleted",
+  "description": "The hooks file is deleted, so no SessionStart hook runs and the mandate never arrives. S3 cannot see a startup hook_response at all, which the verifier fails as unobservable.",
+  "edits": [
+    {
+      "op": "delete",
+      "path": "plugins/pstack/hooks/hooks.json"
+    }
+  ],
+  "catches": {
+    "check": "S3"
+  }
+}

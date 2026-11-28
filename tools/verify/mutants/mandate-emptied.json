@@ -1,0 +1,6 @@
+{
+  "id": "mandate-emptied",
+  "description": "The mandate file is emptied: the hook succeeds and prints exactly the file, and the session routes nowhere.",
+  "edits": [{ "op": "write", "path": "plugins/pstack/hooks/session-start-context.md", "content": "" }],
+  "catches": { "check": "S3", "assertion": "skills-named" }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "hook-registered-by-manifest",
+  "description": "The hooks file stops covering startup while the plugin manifest registers a startup hook of its own: the mandate still arrives, from a registration the tree's hooks file does not hold.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/hooks.json",
+      "find": "startup|resume|clear|compact",
+      "with": "resume|clear|compact"
+    },
+    {
+      "op": "write",
+      "path": "plugins/pstack/hooks/startup-hooks.json",
+      "content": "{\"hooks\":{\"SessionStart\":[{\"matcher\":\"startup\",\"hooks\":[{\"type\":\"command\",\"command\":\"\\\"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\\\" claude\"}]}]}}\n"
+    },
+    {
+      "op": "replace",
+      "path": "plugins/pstack/.claude-plugin/plugin.json",
+      "find": "\"name\": \"pstack\",",
+      "with": "\"name\": \"pstack\",\n  \"hooks\": \"./hooks/startup-hooks.json\","
+    }
+  ],
+  "catches": {
+    "check": "S3",
+    "assertion": "registered"
+  }
+}

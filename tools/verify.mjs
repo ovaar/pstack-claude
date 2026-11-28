@@ -11,6 +11,7 @@
 //   bun tools/verify.mjs [--tier surface|behavior|all] [--flow <id>]
 //                        [--tree <checkout>] [--evidence <dir>] [--jobs 1-3]
 //   bun tools/verify.mjs check <evidence-dir>
+//   bun tools/verify.mjs honesty [--mutant <id>] [--keep] [--base <ref>]
 //
 // One file per check: verify/flows/<id>-<name>.mjs says what to run and
 // verify/checks/<id>-<name>.mjs says what must hold. Evidence goes to
@@ -51,7 +52,8 @@ import { behaviorAccess, buildStage, caps, doctor, evidenceRoot, forgetProjects,
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const USAGE = `usage: bun tools/verify.mjs [--tier ${TIERS.join("|")}|all] [--flow <id>] [--tree <checkout>] [--evidence <dir>] [--jobs 1-3] [--require-behavior]
-       bun tools/verify.mjs check <evidence-dir>`;
+       bun tools/verify.mjs check <evidence-dir>
+       bun tools/verify.mjs honesty [--mutant <id>] [--keep] [--base <ref>]`;
 
 class UsageError extends Error {}
 
@@ -162,6 +164,11 @@ function runDirectory(given) {
 
 async function main() {
   const args = process.argv.slice(2);
+  // Plants known mistakes and runs this verifier on each; see honesty.mjs.
+  if (args[0] === "honesty") {
+    const { main: honesty } = await import("./honesty.mjs");
+    process.exit(honesty(args.slice(1)));
+  }
   if (args[0] === "check" && args.length !== 2) throw new UsageError(USAGE);
   const result = args[0] === "check" ? await report(runDirectory(args[1]), new Date().toISOString()) : await verify(parse(args));
   if (result.verdict === "FAIL") process.exit(1);

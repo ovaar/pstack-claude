@@ -1,0 +1,6 @@
+{
+  "id": "mandate-names-unloaded-skill",
+  "description": "The mandate routes to a skill the plugin does not ship, so the model is told to call something that does not exist.",
+  "edits": [{ "op": "replace", "path": "plugins/pstack/hooks/session-start-context.md", "find": "pstack:tdd", "with": "pstack:tdd-removed" }],
+  "catches": { "check": "S3", "assertion": "skills-named" }
+}

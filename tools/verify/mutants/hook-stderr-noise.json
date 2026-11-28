@@ -1,0 +1,16 @@
+{
+  "id": "hook-stderr-noise",
+  "description": "The hook writes to stderr before it prints the mandate, a warning a user would see at every start.",
+  "edits": [
+    {
+      "op": "replace",
+      "path": "plugins/pstack/hooks/session-start.sh",
+      "find": "cat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\"",
+      "with": "echo noise >&2\ncat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md\""
+    }
+  ],
+  "catches": {
+    "check": "S3",
+    "assertion": "stderr"
+  }
+}
